@@ -327,65 +327,109 @@ const ForwardCard: React.FC<{
 const Like520ChatCard: React.FC<{ data: any }> = ({ data }) => {
     const [open, setOpen] = useState(false);
     const stop = (e: React.MouseEvent | React.TouchEvent) => e.stopPropagation();
+    const dateStr = (() => {
+        try {
+            const d = new Date(data.timestamp || Date.now());
+            return `${d.getFullYear()} · ${String(d.getMonth() + 1).padStart(2, '0')} · ${String(d.getDate()).padStart(2, '0')}`;
+        } catch { return '5 · 2 · 0'; }
+    })();
 
     return (
         <>
+            {/* 拍立得 / 复古剪贴本：照片 + 胶带 + 手写感落款 */}
             <div
                 onClick={() => setOpen(true)}
                 style={{
-                    width: 268,
-                    borderRadius: 4,
-                    overflow: 'hidden',
-                    background: 'linear-gradient(180deg, #fffaef, #f5ead4)',
-                    border: '1px solid #b8923f',
-                    boxShadow: '0 6px 16px rgba(122,46,58,0.18), 0 0 0 4px #faf3e7, 0 0 0 5px rgba(212,177,106,0.45)',
+                    width: 256,
+                    padding: '14px 14px 18px',
+                    background: 'linear-gradient(180deg, #fdf6e3 0%, #f7eed4 100%)',
+                    boxShadow:
+                        '0 1px 2px rgba(74,36,24,0.18), ' +
+                        '0 8px 22px rgba(74,36,24,0.22), ' +
+                        '0 0 0 1px rgba(184,146,63,0.3)',
                     cursor: 'pointer',
                     position: 'relative',
+                    transform: 'rotate(-1.4deg)',
+                    transformOrigin: 'center',
+                    marginTop: 8,
                 }}
             >
+                {/* 左上胶带 */}
                 <div style={{
-                    padding: '10px 14px',
-                    background: 'linear-gradient(135deg, rgba(212,177,106,0.3), rgba(184,146,63,0.12))',
-                    borderBottom: '1px solid rgba(184,146,63,0.35)',
-                    display: 'flex', alignItems: 'center', gap: 8,
+                    position: 'absolute', top: -6, left: 18,
+                    width: 36, height: 14,
+                    background: 'linear-gradient(135deg, rgba(218,190,140,0.55), rgba(184,146,63,0.4))',
+                    boxShadow: '0 1px 2px rgba(74,36,24,0.15)',
+                    transform: 'rotate(-6deg)',
+                    pointerEvents: 'none',
+                }} />
+                {/* 右上胶带 */}
+                <div style={{
+                    position: 'absolute', top: -6, right: 18,
+                    width: 36, height: 14,
+                    background: 'linear-gradient(135deg, rgba(218,190,140,0.55), rgba(184,146,63,0.4))',
+                    boxShadow: '0 1px 2px rgba(74,36,24,0.15)',
+                    transform: 'rotate(6deg)',
+                    pointerEvents: 'none',
+                }} />
+
+                {/* 照片本体 */}
+                <div style={{
+                    position: 'relative',
+                    background: '#fff',
+                    padding: 0,
+                    boxShadow: '0 2px 6px rgba(74,36,24,0.18), inset 0 0 0 1px rgba(184,146,63,0.25)',
                 }}>
-                    <div style={{
-                        width: 26, height: 26, borderRadius: 4, flexShrink: 0,
-                        background: 'linear-gradient(135deg, #f4e0a8, #d4b16a, #8b6914)',
-                        color: '#fff8ec',
-                        display: 'grid', placeItems: 'center',
-                        fontFamily: 'Cinzel, serif', fontSize: 9, fontWeight: 600,
-                        letterSpacing: -0.5,
-                        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.4), 0 1px 2px rgba(139,105,20,0.3)',
-                    }}>520</div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 8.5, letterSpacing: 4, color: '#8b6914', fontFamily: 'Cinzel, serif', fontWeight: 600 }}>TRÉSOR · 520</div>
-                        <div style={{ fontSize: 12, color: '#7a2e3a', fontFamily: '"Noto Serif SC", serif', fontWeight: 500, letterSpacing: 1, marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{data.title || '我们的下午'}</div>
-                    </div>
+                    {data.photoDataUrl
+                        ? <img src={data.photoDataUrl} alt="合照" style={{ width: '100%', display: 'block' }} />
+                        : <div style={{ width: '100%', aspectRatio: '1200 / 780', background: 'linear-gradient(180deg, #FFE0E8, #FFD3DC)' }} />}
                 </div>
-                {data.photoDataUrl ? (
-                    <img src={data.photoDataUrl} alt="合照" style={{ width: '100%', display: 'block', borderBottom: '1px solid rgba(184,146,63,0.25)' }} />
-                ) : null}
+
+                {/* 手写感标题 */}
                 <div style={{
-                    padding: '8px 14px 10px',
-                    color: '#5C3A4A',
-                    fontSize: 11,
-                    fontStyle: 'italic',
+                    marginTop: 12,
+                    textAlign: 'center',
                     fontFamily: '"Cormorant Garamond", "Noto Serif SC", serif',
-                    lineHeight: 1.7,
-                    letterSpacing: 0.5,
+                    fontStyle: 'italic',
+                    fontSize: 14,
+                    color: '#7a2e3a',
+                    letterSpacing: 1,
+                    lineHeight: 1.35,
                 }}>
-                    «{(data.letter || '').slice(0, 36)}…»
+                    「 {data.title || '我们的下午'} 」
                 </div>
+
+                {/* 日期 + 落款 */}
                 <div style={{
-                    padding: '6px 14px 8px',
+                    marginTop: 6,
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'baseline',
+                    paddingTop: 6,
                     borderTop: '0.5px dashed rgba(184,146,63,0.4)',
-                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                    fontFamily: '"Cormorant Garamond", serif', fontStyle: 'italic',
-                    fontSize: 10, color: '#8b6914', letterSpacing: 1.5,
+                    fontFamily: 'Cinzel, serif',
+                    fontSize: 9.5,
+                    letterSpacing: 2,
+                    color: '#8b6914',
+                    fontWeight: 600,
                 }}>
-                    <span>— {data.charName}</span>
-                    <span style={{ color: '#b8923f' }}>展开 →</span>
+                    <span>{dateStr}</span>
+                    <span style={{ fontFamily: '"Cormorant Garamond", serif', fontStyle: 'italic', fontWeight: 400, letterSpacing: 1, fontSize: 10 }}>
+                        — {data.charName}
+                    </span>
+                </div>
+
+                {/* 暗示有信 */}
+                <div style={{
+                    marginTop: 6,
+                    textAlign: 'center',
+                    fontFamily: '"Cormorant Garamond", "Noto Serif SC", serif',
+                    fontStyle: 'italic',
+                    fontSize: 10.5,
+                    color: '#b8923f',
+                    letterSpacing: 2,
+                }}>
+                    ❦ 点 开 看 信 ❦
                 </div>
             </div>
 
