@@ -498,6 +498,8 @@ interface UseChatAIProps {
     emojis: Emoji[];
     categories: EmojiCategory[];
     addToast: (msg: string, type: 'info'|'success'|'error') => void;
+    /** 长报错走弹窗 (toast 一行装不下), 手机用户能看清并复制反馈 */
+    showError?: (title: string, details: string) => void;
     setMessages: (msgs: Message[]) => void; // Callback to update UI messages
     realtimeConfig?: RealtimeConfig; // 新增：实时配置
     translationConfig?: { enabled: boolean; sourceLang: string; targetLang: string };
@@ -516,6 +518,7 @@ export const useChatAI = ({
     emojis,
     categories,
     addToast,
+    showError,
     setMessages,
     realtimeConfig,  // 新增
     translationConfig,
@@ -806,7 +809,25 @@ export const useChatAI = ({
                     metadata: { source: 'sullyos-chat', charId: char.id },
                 }, char.id, undefined, onInstantPosted);
                 if (!instantResult.ok) {
-                    addToast(`Instant Push: ${instantResult.error}`, 'error');
+                    // 长报错 (worker 400 校验信息可能很长) 走弹窗, 手机用户能看清并复制反馈;
+                    // 没注入 showError 时降级到 toast, 保证调用方不强依赖。
+                    const errMsg = instantResult.error || '未知错误';
+                    const detailsLines = [
+                        `outcome: ${instantResult.outcome}`,
+                        '',
+                        errMsg,
+                        '',
+                        '— context —',
+                        `char: ${char.name}`,
+                        `model: ${effectiveApi.model}`,
+                        `apiUrl: ${effectiveApi.baseUrl}`,
+                        `msgs: ${fullMessages.length}`,
+                    ];
+                    if (showError) {
+                        showError('Instant Push 发送失败', detailsLines.join('\n'));
+                    } else {
+                        addToast(`Instant Push: ${errMsg}`, 'error');
+                    }
                 }
                 return;
             }

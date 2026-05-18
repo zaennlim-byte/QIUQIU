@@ -212,6 +212,12 @@ interface OSContextType {
   toasts: Toast[];
   addToast: (message: string, type?: Toast['type']) => void;
 
+  // 长报错弹窗：toast 一行装不下 / 手机没法开 console 时, 用 showError 弹一个
+  // 多行预览框 + 复制按钮, 方便用户把原文反馈过来。
+  errorDialog: { title: string; details: string } | null;
+  showError: (title: string, details: string) => void;
+  dismissError: () => void;
+
   // Icons
   customIcons: Record<string, string>;
   setCustomIcon: (appId: string, iconUrl: string | undefined) => void;
@@ -553,6 +559,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   const [customIcons, setCustomIcons] = useState<Record<string, string>>({});
   const [appearancePresets, setAppearancePresets] = useState<AppearancePreset[]>([]);
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [errorDialog, setErrorDialog] = useState<{ title: string; details: string } | null>(null);
   
   const [lastMsgTimestamp, setLastMsgTimestamp] = useState<number>(0);
   const [unreadMessages, setUnreadMessages] = useState<Record<string, number>>({});
@@ -1988,6 +1995,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   const removeCustomTheme = async (id: string) => { setCustomThemes(prev => prev.filter(t => t.id !== id)); await DB.deleteTheme(id); };
   const setCustomIcon = async (appId: string, iconUrl: string | undefined) => { setCustomIcons(prev => { const next = { ...prev }; if (iconUrl) next[appId] = iconUrl; else delete next[appId]; return next; }); if (iconUrl) { await DB.saveAsset(`icon_${appId}`, iconUrl); } else { await DB.deleteAsset(`icon_${appId}`); } };
   const addToast = (message: string, type: Toast['type'] = 'info') => { const id = Date.now().toString(); setToasts(prev => [...prev, { id, message, type }]); setTimeout(() => { setToasts(prev => prev.filter(t => t.id !== id)); }, 3000); };
+  const showError = (title: string, details: string) => { setErrorDialog({ title, details }); };
+  const dismissError = () => { setErrorDialog(null); };
 
   // --- APPEARANCE PRESETS ---
   const saveAppearancePreset = async (name: string) => {
@@ -3044,6 +3053,9 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     importAppearancePreset,
     toasts,
     addToast,
+    errorDialog,
+    showError,
+    dismissError,
     customIcons,
     setCustomIcon,
     resetAppearance,

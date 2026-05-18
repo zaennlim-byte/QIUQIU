@@ -47,6 +47,7 @@ import { Capacitor } from '@capacitor/core';
 import { isIOSStandaloneWebApp } from '../utils/iosStandalone';
 import AppErrorBoundary from './os/AppErrorBoundary';
 import GlobalMiniPlayer from './os/GlobalMiniPlayer';
+import ErrorDialog from './os/ErrorDialog';
 
 /*
 // Internal Error Boundary Component
@@ -204,7 +205,7 @@ const DisclaimerPopup: React.FC<{ onAccept: () => void }> = ({ onAccept }) => (
 );
 
 const PhoneShell: React.FC = () => {
-  const { theme, isLocked, unlock, activeApp, closeApp, virtualTime, isDataLoaded, toasts, unreadMessages, characters, handleBack, suspendedCall, resumeCall, activeCharacterId } = useOS();
+  const { theme, isLocked, unlock, activeApp, closeApp, virtualTime, isDataLoaded, toasts, unreadMessages, characters, handleBack, suspendedCall, resumeCall, activeCharacterId, errorDialog, dismissError } = useOS();
   const useIOSStandaloneLayout = isIOSStandaloneWebApp();
 
   // Disclaimer popup for first-time users
@@ -478,6 +479,14 @@ const PhoneShell: React.FC = () => {
               ))}
            </div>
        </div>
+
+       {/* Global error dialog (长报错走它, 替代单行 toast) */}
+       <ErrorDialog
+         isOpen={!!errorDialog}
+         title={errorDialog?.title ?? ''}
+         details={errorDialog?.details ?? ''}
+         onClose={dismissError}
+       />
 
        {/* First-time disclaimer popup */}
        {showDisclaimer && <DisclaimerPopup onAccept={handleAcceptDisclaimer} />}
