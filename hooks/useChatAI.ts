@@ -64,11 +64,11 @@ function buildEmotionEvalPrompt(
         ? JSON.stringify(currentBuffs, null, 2)
         : '（当前无buff，情绪平稳）';
 
-    // instant 模式 (includeContext=false): system prompt + 对话历史不在这里嵌入, 改由 worker 把本次
-    // 请求已有的 messages 摊平成文本、注入到同一条 user 消息里 (还原本地的「单条 user 消息」语义).
-    // 关键: 不能让 worker 把 messages 当真消息数组直接发 —— 那样角色扮演 system prompt 会变成情绪
-    // 评估 LLM 的 system 指令, 把它带成「扮演角色」而非「分析情绪」, 导致一直 changed:false.
-    // 这样既不重复发上下文 (请求体小, keepalive 不被降级), 评估语义又跟本地一致.
+    // instant 模式 (includeContext=false): 章节结构与本地**完全一致**, 只把两段大文本 (system prompt、
+    // 对话历史) 留成占位符 token, 由 worker 用本次请求已有的 messages 填回**原位** —— 输出与本地逐字
+    // 对齐 (顺序/章节/格式都一样), 又不必把上下文重复塞进请求体 (省一份, keepalive 不被降级).
+    // worker 端 (worker/instant-push runEmotionEval) 负责把 messages[0]=system、messages[1..]=对话历史
+    // 还原成与本地 mainSystemPrompt / recentLines 相同的文本替换进去.
     const contextSection = includeContext
         ? `
 
@@ -77,7 +77,13 @@ ${mainSystemPrompt}
 
 ## 完整对话历史（与主 API 看到的消息历史完全一致）
 ${recentLines}`
-        : '';
+        : `
+
+## 角色此刻看到的完整上下文（与主 API 发送的 system prompt 完全一致）
+__EMOTION_EVAL_SYSTEM_PROMPT__
+
+## 完整对话历史（与主 API 看到的消息历史完全一致）
+__EMOTION_EVAL_HISTORY__`;
 
     return `你是一个角色情绪分析系统。请分析角色「${char.name}」当前的情绪底色状态。${contextSection}
 

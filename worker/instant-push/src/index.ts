@@ -97,10 +97,11 @@ async function runEmotionEval(body: any, env: Env): Promise<void> {
   if (!env.VAPID_PUBLIC_KEY || !env.VAPID_PRIVATE_KEY) return;
 
   const charId = (body?.metadata && typeof body.metadata === 'object') ? body.metadata.charId : '';
-  // 复用主回复请求里已有的 messages (system prompt + 对话历史) 作为情绪评估上下文 —— 客户端不再
-  // 重复发一份, 请求体不会撑过 keepalive 64KB 上限. 但**必须摊平成文本**塞进单条 user 消息, 不能
-  // 直接把 messages 当消息数组发: 否则角色扮演 system prompt 会成为情绪评估 LLM 的 system 指令,
-  // 把它带成「扮演角色」而非「分析情绪」, 导致一直 changed:false. 摊平后语义跟本地「单条 user 消息」一致.
+  // 情绪评估 = 单条 user 消息, 与本地 buildEmotionEvalPrompt 输出**逐字对齐**. 客户端把 prompt 里
+  // 两段大文本 (system prompt、对话历史) 留成占位符, 这里用本次请求已有的 messages 还原后替换回原位:
+  //   - body.messages[0] (role=system) = 本地的 mainSystemPrompt
+  //   - body.messages[1..]             = 本地的 cleanedApiMessages → 同格式拼成 recentLines
+  // 这样上下文不必在请求体里重复发 (keepalive 不被降级), 评估质量/顺序与本地完全一致.
   const priorMessages = Array.isArray(body?.messages) ? body.messages : [];
   const contactName = body?.contactName || '角色';
   const flattenContent = (content: any): string => {
@@ -113,18 +114,23 @@ async function runEmotionEval(body: any, env: Env): Promise<void> {
     }
     return '';
   };
-  const contextText = priorMessages
+  let systemPromptText = '';
+  let conversation = priorMessages;
+  if (priorMessages.length > 0 && priorMessages[0]?.role === 'system') {
+    systemPromptText = flattenContent(priorMessages[0].content);
+    conversation = priorMessages.slice(1);
+  }
+  // 与本地 recentLines 完全同格式: `[用户]: ...` / `[角色名]: ...` / `[系统]: ...`, 用 \n 连接.
+  const recentLines = conversation
     .map((m: any) => {
-      const role = m.role === 'system' ? '系统设定'
-        : m.role === 'user' ? '用户'
-        : m.role === 'assistant' ? contactName
-        : String(m.role || '');
-      return `[${role}]:\n${flattenContent(m.content)}`;
+      const role = m.role === 'user' ? '用户' : (m.role === 'assistant' ? contactName : '系统');
+      return `[${role}]: ${flattenContent(m.content)}`;
     })
-    .join('\n\n');
-  const evalContent = contextText
-    ? `## 角色此刻看到的完整上下文与对话历史（与主 API 完全一致）\n${contextText}\n\n──────────\n\n${String(ee.prompt)}`
-    : String(ee.prompt);
+    .join('\n');
+  // 用函数式 replacer: 避免 systemPrompt / 对话里出现 $&、$1 等被 String.replace 当成替换模式解析.
+  const evalContent = String(ee.prompt)
+    .replace('__EMOTION_EVAL_SYSTEM_PROMPT__', () => systemPromptText)
+    .replace('__EMOTION_EVAL_HISTORY__', () => recentLines);
   const evalMessages = [{ role: 'user', content: evalContent }];
   try {
     const baseUrl = String(ee.api.baseUrl).replace(/\/+$/, '');

@@ -2449,17 +2449,17 @@ async function runEmotionEval(body, env) {
     }
     return "";
   };
-  const contextText = priorMessages.map((m) => {
-    const role = m.role === "system" ? "\u7CFB\u7EDF\u8BBE\u5B9A" : m.role === "user" ? "\u7528\u6237" : m.role === "assistant" ? contactName : String(m.role || "");
-    return `[${role}]:
-${flattenContent(m.content)}`;
-  }).join("\n\n");
-  const evalContent = contextText ? `## \u89D2\u8272\u6B64\u523B\u770B\u5230\u7684\u5B8C\u6574\u4E0A\u4E0B\u6587\u4E0E\u5BF9\u8BDD\u5386\u53F2\uFF08\u4E0E\u4E3B API \u5B8C\u5168\u4E00\u81F4\uFF09
-${contextText}
-
-\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-
-${String(ee.prompt)}` : String(ee.prompt);
+  let systemPromptText = "";
+  let conversation = priorMessages;
+  if (priorMessages.length > 0 && priorMessages[0]?.role === "system") {
+    systemPromptText = flattenContent(priorMessages[0].content);
+    conversation = priorMessages.slice(1);
+  }
+  const recentLines = conversation.map((m) => {
+    const role = m.role === "user" ? "\u7528\u6237" : m.role === "assistant" ? contactName : "\u7CFB\u7EDF";
+    return `[${role}]: ${flattenContent(m.content)}`;
+  }).join("\n");
+  const evalContent = String(ee.prompt).replace("__EMOTION_EVAL_SYSTEM_PROMPT__", () => systemPromptText).replace("__EMOTION_EVAL_HISTORY__", () => recentLines);
   const evalMessages = [{ role: "user", content: evalContent }];
   try {
     const baseUrl = String(ee.api.baseUrl).replace(/\/+$/, "");
