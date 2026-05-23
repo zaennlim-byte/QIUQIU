@@ -291,8 +291,11 @@ async function runPushTailPipeline(
   // 先写 KV pending 标记: 即使 useChatAI listener 因任何原因没接到事件 (mount race / 事件被吃),
   // 下次 useChatAI mount 这个 char 时 useEffect 兜底 drain.
   // gate 只看 emotionConfig.enabled — useChatAI 那边再叠 isScheduleFeatureOn 检查, 双 gate.
+  // isLastChunk 守卫: amsg-instant 一个 user turn 会产 N 条 push, runPushTailPipeline 每条都跑.
+  // 情绪 eval 用 full ctx 算且无并发锁, 不加守卫会被触发 N 次 (N 条 chunk → N 次 evaluateEmotionBackground),
+  // 跟 directives (line 209) 同理只该在最后一条 chunk 跑一次. 老 worker 无 index 字段 → isLastChunk 恒 true, 退化为每次一回 (即原行为).
   const emotionConfig = (char as any).emotionConfig;
-  if (emotionConfig?.enabled) {
+  if (emotionConfig?.enabled && isLastChunk(message)) {
     try {
       await ActiveMsgStore.setPendingEmotionEval(char.id, message.messageId);
     } catch (e) {

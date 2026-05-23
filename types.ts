@@ -160,6 +160,10 @@ export interface InstantPushConfig {
   // VAPID 公私钥已迁移到 utils/pushVapid.ts (push_vapid_v1)，与 Proactive Push
   // 共享同一份，避免两边互相 unsubscribe 抢同一个 pushManager 订阅。
   clientToken?: string;     // 对应 Worker 的 AMSG_CLIENT_TOKEN
+  // 发送文本后是否自动触发 AI 回复 (worker 端跑 + push 回写). 仅控制"自动触发"这件事,
+  // 不改变 instant push 本身的开关含义. 关闭时 instant 模式也保留手动 ⚡, 跟本地模式一致.
+  // 缺省 (undefined) 视为关闭 — 避免"启用 instant = 自动回复"的反直觉强绑定.
+  autoTriggerOnSend?: boolean;
   updatedAt?: number;
 }
 

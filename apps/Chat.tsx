@@ -20,7 +20,7 @@ import ProactiveSettingsModal from '../components/chat/ProactiveSettingsModal';
 import ThinkingChainSettingsModal from '../components/chat/ThinkingChainSettingsModal';
 import { useChatAI } from '../hooks/useChatAI';
 import { synthesizeSpeechDetailed, cleanTextForTts } from '../utils/minimaxTts';
-import { isInstantConfigReady } from '../utils/instantPushClient';
+import { isInstantConfigReady, loadInstantConfig } from '../utils/instantPushClient';
 
 const VOICE_LANG_LABELS: Record<string, string> = { en: 'English', ja: '日本語', ko: '한국어', fr: 'Français', es: 'Español' };
 
@@ -809,7 +809,10 @@ const Chat: React.FC = () => {
         // 本地模式仍维持手动触发以保留现有 UX。triggerAI 内部会从 DB 拉完整历史，
         // 闭包里的 messages 还没包含刚写入的 user msg 也没关系。
         // 仅文本消息触发；image / xhs_card 等卡片消息不触发，与本地手动行为对齐。
-        if (type === 'text' && isInstantConfigReady()) {
+        // autoTriggerOnSend gate：instant ready 也只在用户显式开启"发送后自动触发"时才自动回复，
+        // 否则保留手动 ⚡（避免"启用 instant = 自动回复"的反直觉强绑定）。
+        const instantCfg = loadInstantConfig();
+        if (type === 'text' && isInstantConfigReady(instantCfg) && instantCfg.autoTriggerOnSend) {
             // 标记为"准备中"：从写入 DB 到 POST 真正发出之间气泡半透明，
             // 提示用户先别杀 PWA。worker 收到（200）后回调清除。
             setPendingInstantMsgIds(prev => {

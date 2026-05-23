@@ -28,6 +28,7 @@ export const InstantPushSettingsModal: React.FC<InstantPushSettingsModalProps> =
   const [workerUrl, setWorkerUrl] = useState('');
   const [clientToken, setClientToken] = useState('');
   const [enabled, setEnabled] = useState(false);
+  const [autoTriggerOnSend, setAutoTriggerOnSend] = useState(false);
 
   const [vapidReady, setVapidReady] = useState(false);
 
@@ -51,6 +52,7 @@ export const InstantPushSettingsModal: React.FC<InstantPushSettingsModalProps> =
     setWorkerUrl(cfg.workerUrl);
     setClientToken(cfg.clientToken ?? '');
     setEnabled(cfg.enabled);
+    setAutoTriggerOnSend(cfg.autoTriggerOnSend ?? false);
     setVapidReady(isPushVapidReady());
     setTestStatus('');
     setCopyStatus('');
@@ -60,6 +62,7 @@ export const InstantPushSettingsModal: React.FC<InstantPushSettingsModalProps> =
     enabled,
     workerUrl: workerUrl.trim().replace(/\/+$/, ''),
     clientToken: clientToken.trim() || undefined,
+    autoTriggerOnSend,
   });
 
   const handleGenerateToken = () => {
@@ -234,6 +237,21 @@ export const InstantPushSettingsModal: React.FC<InstantPushSettingsModalProps> =
               className="accent-indigo-500"
             />
             <span className="text-[12px] text-slate-600 font-medium">启用 Instant Push</span>
+          </label>
+
+          <label className="flex items-start gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={autoTriggerOnSend}
+              onChange={(e) => setAutoTriggerOnSend(e.target.checked)}
+              className="accent-indigo-500 mt-0.5"
+            />
+            <span className="text-[12px] text-slate-600 font-medium leading-relaxed">
+              发送后自动触发回复
+              <span className="block text-[11px] text-slate-400 font-normal">
+                关闭时发完文本仍需手动点 ⚡ 触发，跟本地模式一致；开启后发文本即自动让角色回复。
+              </span>
+            </span>
           </label>
         </div>
 
