@@ -2095,8 +2095,9 @@ const Settings: React.FC = () => {
                           </div>
                           <p className="text-[10px] text-red-500/70 leading-relaxed">
                               <b>⭐ Lite 模式（推荐，零本地依赖）:</b> URL 已默认好，<b>只需粘贴上面的 cookie</b><br/>
-                              浏览器登录小红书 → F12 → Application → Cookies → 复制完整 cookie（含 a1、web_session）<br/>
-                              无需 Chrome/隧道/Python/扫码，云端 Worker 直接签名<br/>
+                              电脑浏览器登录小红书 → F12 → Network(网络) → 刷新页面 → 点任意 xiaohongshu.com 请求 → 在 Request Headers 里找到 <b>cookie:</b> → 复制整行的值粘贴到上面<br/>
+                              （别只用 Console 的 document.cookie，web_session 是 httpOnly 拿不到）<br/>
+                              cookie 会过期(数天~数周)，失效后重新复制一次即可。无需 Chrome/隧道/Python/扫码<br/>
                               <br/>
                               <b>MCP 模式:</b> 下载 xiaohongshu-mcp + 运行脚本，URL 填 http://localhost:18060/mcp<br/>
                               <b>Skills 模式:</b> URL 填 http://localhost:18061/api（需 Python + xhs-bridge.mjs）<br/>
