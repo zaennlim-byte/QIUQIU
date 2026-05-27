@@ -1191,14 +1191,45 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           setLastMsgTimestamp(Date.now());
       };
 
+      // 情绪 buff 落地后同步进内存 characters —— 必须是 App 级、不限当前打开的角色:
+      // instant 模式下 worker 推回 emotion_update 时用户常不在该角色聊天页 (在别的角色 /
+      // 列表 / 后台 / 还没点进去). 之前只有 Chat.tsx 里那个 `charId === activeCharacterId`
+      // 守卫的 handler 同步内存, 不匹配就直接 return —— buff 只落了 DB, 内存没更新; 而
+      // OSContext 只在启动时 getAllCharacters, 切回该角色也不重读 DB, 于是 buff "回不到前端".
+      // 更糟: 之后任一 updateCharacter 会拿旧内存合并写回 DB, 把后台刚生成的 buff 抹掉.
+      // 这里无条件按事件 charId 更新内存 (DB 已由 applyEmotionEvalRaw 写好), 顺带堵住反向覆盖.
+      const buffSyncHandler = (e: Event) => {
+          const detail = (e as CustomEvent).detail as { charId?: string; buffs?: unknown; buffInjection?: unknown };
+          const charId = detail?.charId;
+          if (!charId) return;
+          if (Array.isArray(detail.buffs)) {
+              const nextBuffs = detail.buffs as CharacterProfile['activeBuffs'];
+              const nextInjection = typeof detail.buffInjection === 'string' ? detail.buffInjection : '';
+              setCharacters(prev => prev.map(c => c.id === charId
+                  ? normalizeCharacterImpression({ ...c, activeBuffs: nextBuffs, buffInjection: nextInjection })
+                  : c));
+              return;
+          }
+          // 无 buffs 的纯刷新信号 (runPushTailPipeline 等): 从 DB 兜底重读该角色 buff.
+          DB.getAllCharacters().then(all => {
+              const updated = all.find(c => c.id === charId);
+              if (!updated) return;
+              setCharacters(prev => prev.map(c => c.id === charId
+                  ? normalizeCharacterImpression({ ...c, activeBuffs: updated.activeBuffs, buffInjection: updated.buffInjection })
+                  : c));
+          }).catch(() => {});
+      };
+
       window.addEventListener('active-msg-received', handler);
       window.addEventListener('active-msg-progress', progressHandler);
       window.addEventListener('active-msg-open', openHandler);
+      window.addEventListener('emotion-updated', buffSyncHandler);
       document.addEventListener('visibilitychange', onVisible);
       return () => {
           window.removeEventListener('active-msg-received', handler);
           window.removeEventListener('active-msg-progress', progressHandler);
           window.removeEventListener('active-msg-open', openHandler);
+          window.removeEventListener('emotion-updated', buffSyncHandler);
           document.removeEventListener('visibilitychange', onVisible);
       };
   }, [sendProactiveNativeNotification]);

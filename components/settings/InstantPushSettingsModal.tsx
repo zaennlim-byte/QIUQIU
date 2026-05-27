@@ -11,7 +11,11 @@ import {
   normalizeWorkerUrl,
 } from '../../utils/instantPushClient';
 import { isPushVapidReady } from '../../utils/pushVapid';
-import { InstantPushConfig } from '../../types';
+import {
+  markWorkerBuildSeen,
+} from '../WorkerUpdateReminderEvent';
+import { FAQ_TARGET_SECTION_KEY, CHANGELOG_2026_05_27 } from '../UpdateNotificationEvent';
+import { InstantPushConfig, AppID } from '../../types';
 
 interface InstantPushSettingsModalProps {
   open: boolean;
@@ -25,7 +29,7 @@ export const InstantPushSettingsModal: React.FC<InstantPushSettingsModalProps> =
   onClose,
   onOpenVapid,
 }) => {
-  const { apiConfig, addToast } = useOS();
+  const { apiConfig, addToast, openApp } = useOS();
 
   const [workerUrl, setWorkerUrl] = useState('');
   const [clientToken, setClientToken] = useState('');
@@ -44,15 +48,15 @@ export const InstantPushSettingsModal: React.FC<InstantPushSettingsModalProps> =
   const [capabilityStatusKind, setCapabilityStatusKind] = useState<'idle' | 'loading' | 'success' | 'warning' | 'error'>('idle');
   const [capabilityBusy, setCapabilityBusy] = useState(false);
   const [copyStatus, setCopyStatus] = useState('');
-  const [gitUrlStatus, setGitUrlStatus] = useState('');
 
-  // vite.config.ts 注入 __BUILD_BRANCH__ — release 分支 (master / main) 或非 git
-  // 环境 (unknown) 走 master, 其他分支 (feature/* 等) 用当前分支, 方便 PR 前在
-  // 自己 fork / 分支上测部署. 注意: 分支必须已推到远端 GitHub, CF clone 才能拉到.
-  const INSTANT_PUSH_GIT_URL = (() => {
+  // GitHub 上 worker.bundle.js 的地址 — 主路径是 app 内「复制 Worker 代码」直接拷贝
+  // 本地随包的 bundle; 这个 URL 仅作复制失败时的兜底入口. vite.config.ts 注入的
+  // __BUILD_BRANCH__: release (master / main) 或非 git 环境 (unknown) 走 master,
+  // 其他分支用当前分支, 方便 PR 前在自己 fork / 分支上测 (分支需已推到远端).
+  const INSTANT_PUSH_BUNDLE_URL = (() => {
     const branch = (typeof __BUILD_BRANCH__ !== 'undefined' && __BUILD_BRANCH__) || 'master';
     const ref = branch === 'master' || branch === 'main' || branch === 'unknown' ? 'master' : branch;
-    return `https://github.com/qegj567-cloud/SullyOS/tree/${ref}/worker/instant-push`;
+    return `https://github.com/qegj567-cloud/SullyOS/blob/${ref}/worker/instant-push/worker.bundle.js`;
   })();
 
   useEffect(() => {
@@ -111,7 +115,8 @@ export const InstantPushSettingsModal: React.FC<InstantPushSettingsModalProps> =
   const handleCopyWorkerCode = async () => {
     setCopyStatus('加载中…');
     try {
-      const res = await fetch('/instant-worker.bundle.js');
+      const base = import.meta.env.BASE_URL || '/';
+      const res = await fetch(`${base}instant-worker.bundle.js`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const text = await res.text();
       await navigator.clipboard.writeText(text);
@@ -124,15 +129,12 @@ export const InstantPushSettingsModal: React.FC<InstantPushSettingsModalProps> =
     }
   };
 
-  const handleCopyGitUrl = async () => {
+  const handleOpenTutorial = () => {
     try {
-      await navigator.clipboard.writeText(INSTANT_PUSH_GIT_URL);
-      setGitUrlStatus('已复制');
-      setTimeout(() => setGitUrlStatus(''), 2000);
-    } catch (e) {
-      const err = e as { message?: string } | null;
-      addToast(`复制失败：${err?.message ?? '未知错误'}`, 'error');
-    }
+      sessionStorage.setItem(FAQ_TARGET_SECTION_KEY, CHANGELOG_2026_05_27);
+    } catch { /* ignore */ }
+    openApp(AppID.FAQ);
+    onClose();
   };
 
   const handleOpenCF = () => {
@@ -231,7 +233,10 @@ export const InstantPushSettingsModal: React.FC<InstantPushSettingsModalProps> =
   };
 
   const handleSave = () => {
-    saveInstantConfig(currentCfg());
+    const cfg = currentCfg();
+    saveInstantConfig(cfg);
+    // 保存为启用状态视为「已按当前 worker 版本配好」，避免随后被无意义地提醒更新。
+    if (cfg.enabled) markWorkerBuildSeen();
     addToast('Instant Push 配置已保存', 'success');
     onClose();
   };
@@ -267,6 +272,19 @@ export const InstantPushSettingsModal: React.FC<InstantPushSettingsModalProps> =
       }
     >
       <div className="space-y-5 text-sm">
+
+        {/* 顶部教程入口 — 打开面板第一眼就能看到，方便第一次自己配的用户 */}
+        <button
+          type="button"
+          onClick={handleOpenTutorial}
+          className="w-full flex items-center gap-3 rounded-2xl p-3 bg-gradient-to-r from-rose-50 to-amber-50 border border-rose-200 hover:from-rose-100 hover:to-amber-100 text-left transition-colors"
+        >
+          <span className="flex-1 min-w-0">
+            <span className="block text-[12px] font-bold text-rose-600">第一次配置？先看视频教程</span>
+            <span className="block text-[11px] text-slate-500">跟着视频一步步点，大概十分钟搞定</span>
+          </span>
+          <span className="shrink-0 text-rose-500 font-bold text-sm">看教程 →</span>
+        </button>
 
         {/* VAPID 状态横条 */}
         <div className={`rounded-2xl p-3 border ${vapidReady ? 'bg-emerald-50 border-emerald-200' : 'bg-rose-50 border-rose-200'}`}>
@@ -401,17 +419,18 @@ export const InstantPushSettingsModal: React.FC<InstantPushSettingsModalProps> =
         <div className="bg-slate-50 rounded-2xl p-4 space-y-2">
           <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">② 部署 Worker</p>
           <p className="text-[11px] text-slate-500 leading-relaxed">
-            在 CF 后台选「Clone a public repository via Git URL」，粘贴下面的 Git URL；
-            VAPID 公钥/私钥到「推送凭据 (VAPID)」面板复制 env 清单，再粘进 Worker 的 Variables。
+            在 CF 后台 Create → Worker 建一个空 Worker，进 <strong>Edit code</strong> 把下面复制到的
+            <code className="font-mono"> worker.bundle.js </code>全部内容粘贴覆盖，再 Deploy；
+            VAPID 公钥/私钥到「推送凭据 (VAPID)」面板复制 env 清单，粘进 Worker 的 Variables。
           </p>
 
           <div className="grid grid-cols-2 gap-2">
             <button
               type="button"
-              onClick={() => void handleCopyGitUrl()}
+              onClick={() => void handleCopyWorkerCode()}
               className="py-2 rounded-xl text-[11px] font-bold bg-indigo-500 text-white hover:bg-indigo-600"
             >
-              {gitUrlStatus || '复制 Git URL'}
+              {copyStatus || '复制 Worker 代码'}
             </button>
             <button
               type="button"
@@ -421,25 +440,26 @@ export const InstantPushSettingsModal: React.FC<InstantPushSettingsModalProps> =
               ↗ CF Dashboard
             </button>
           </div>
-          {/* 非 release 分支显示当前分支提示, 让用户意识到 Git URL 指向非 master */}
+          {/* 非 release 分支提示: 兜底 GitHub 链接指向当前分支的 bundle */}
           {typeof __BUILD_BRANCH__ !== 'undefined'
             && __BUILD_BRANCH__
             && __BUILD_BRANCH__ !== 'master'
             && __BUILD_BRANCH__ !== 'main'
             && __BUILD_BRANCH__ !== 'unknown' && (
             <p className="text-[10px] text-amber-600 leading-tight pt-1">
-              Git URL 指向当前分支 <code className="font-mono">{__BUILD_BRANCH__}</code> — 确保已推到远端 GitHub, 否则 CF 拉不到.
+              当前为分支 <code className="font-mono">{__BUILD_BRANCH__}</code> — 兜底 GitHub 链接指向该分支的 bundle，确保已推到远端.
             </p>
           )}
 
           <div className="flex items-center justify-end pt-1">
-            <button
-              type="button"
-              onClick={() => void handleCopyWorkerCode()}
+            <a
+              href={INSTANT_PUSH_BUNDLE_URL}
+              target="_blank"
+              rel="noopener noreferrer"
               className="text-[11px] text-slate-400 hover:text-slate-600 underline-offset-2 hover:underline"
             >
-              {copyStatus ? `备用方案：${copyStatus}` : '备用方案：复制 worker.bundle.js 手动粘贴'}
-            </button>
+              复制失败？去 GitHub 打开 worker.bundle.js →
+            </a>
           </div>
         </div>
 

@@ -2564,6 +2564,8 @@ var replaceMarkdownLinks = (t) => t.replace(/\[([^\]]+)\]\([^)]+\)/g, "[\u94FE\u
 var replaceSendEmoji = (t) => t.replace(/\[\[SEND_EMOJI:\s*(.+?)\]\]/g, "[\u8868\u60C5\uFF1A$1]");
 var replaceEmojiReverseTag = (t) => t.replace(/\[(?:你|User|用户|System|[\w一-龥]+)\s*发送了表情包[:：]\s*(.*?)\]/g, "[\u8868\u60C5\uFF1A$1]");
 var replaceHtmlBlocks = (t) => t.replace(/\[html\][\s\S]*?\[\/html\]/gi, "[HTML \u5361\u7247]");
+var replaceTranslationForBanner = (t) => t.replace(/<翻译>\s*<原文>([\s\S]*?)<\/原文>\s*<译文>[\s\S]*?<\/译文>\s*<\/翻译>/g, "$1").replace(/<译文>[\s\S]*?<\/译文>/g, "").replace(/<\/?(?:翻译|原文)>/g, "");
+var replaceVoiceForBanner = (t) => t.replace(/<(语音|語音)>([\s\S]*?)<\/\1>/g, (_m, _tag, inner) => (inner || "").trim());
 var extractTranslationOriginal = (t) => {
   let result = t.replace(
     /<翻译>\s*<原文>([\s\S]*?)<\/原文>\s*<译文>[\s\S]*?<\/译文>\s*<\/翻译>/g,
@@ -2608,6 +2610,14 @@ function sanitizeIntoSegments(text) {
       {
         pattern: /\[html\][\s\S]*?\[\/html\]/i,
         preview: "[HTML \u5361\u7247]"
+      },
+      {
+        pattern: /<翻译>\s*<原文>([\s\S]*?)<\/原文>\s*<译文>[\s\S]*?<\/译文>\s*<\/翻译>/,
+        preview: (_raw, match) => (match[1] || "").trim() || "[\u7FFB\u8BD1]"
+      },
+      {
+        pattern: /<(语音|語音)>([\s\S]*?)<\/\1>/,
+        preview: (_raw, match) => (match[2] || "").trim() || "[\u8BED\u97F3]"
       }
     ]
   });
@@ -2629,7 +2639,6 @@ ${ATOM_MARKER}B${idx}${ATOM_MARKER}
   cleaned = stripChineseDate(cleaned);
   cleaned = stripRoleNamePrefix(cleaned);
   cleaned = stripSourceTags(cleaned);
-  cleaned = stripQuotes(cleaned);
   cleaned = stripLegacyTrans(cleaned);
   cleaned = stripMarkdownDividers(cleaned);
   const rawChunks = chunkText(cleaned);
@@ -2668,6 +2677,9 @@ ${ATOM_MARKER}B${idx}${ATOM_MARKER}
 function sanitizeTextForBanner(text) {
   let result = text;
   result = replaceHtmlBlocks(result);
+  result = replaceTranslationForBanner(result);
+  result = replaceVoiceForBanner(result);
+  result = stripQuotes(result);
   result = replaceEmojiReverseTag(result);
   result = replaceMarkdownLinks(result);
   result = stripMarkdownHeaders(result);
@@ -2680,11 +2692,11 @@ function chunkText(text) {
   const CJK = "\\u4e00-\\u9fff\\u3400-\\u4dbf\\u3000-\\u303f\\uff00-\\uffef\\u2000-\\u206f\\u2e80-\\u2eff\\u3001-\\u3003\\u2018-\\u201f\\u300a-\\u300f\\uff01-\\uff0f\\uff1a-\\uff20";
   const cjkSpaceRe = new RegExp(`(?<=[${CJK}])\\s+(?=[${CJK}])`);
   const lineChunks = text.split(/(?:\r\n|\r|\n|\u2028|\u2029)+/).map((c) => c.trim()).filter((c) => c.length > 0);
-  const SENTINEL = String.fromCharCode(0);
+  const SPACE_SENTINEL = String.fromCharCode(0);
   const out = [];
   for (const chunk of lineChunks) {
-    const guarded = chunk.replace(/\[{1,2}[^\[\]]*\]{1,2}/g, (m) => m.replace(/\s/g, SENTINEL));
-    const sub = guarded.split(cjkSpaceRe).map((c) => c.split(SENTINEL).join(" ").trim()).filter((c) => c.length > 0);
+    const guarded = chunk.replace(/\[{1,2}[^\[\]]*\]{1,2}/g, (m) => m.replace(/\s/g, SPACE_SENTINEL));
+    const sub = guarded.split(cjkSpaceRe).map((c) => c.split(SPACE_SENTINEL).join(" ").trim()).filter((c) => c.length > 0);
     out.push(...sub);
   }
   return out;

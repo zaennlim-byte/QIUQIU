@@ -466,6 +466,41 @@ const runPendingToolCallsSafely = async () => {
   }
 };
 
+/**
+ * 思维链(心象)回填: SW 收到 reasoning push 写完 buffer 后会 fire 'active-msg-reasoning'.
+ *
+ * 正常情况 worker 先发 reasoning 再发 content, reasoning 先落 buffer, content flush 时
+ * claimReasoning 取到并挂上 thinkingChain. 但 reasoning / content 是两条独立 Web Push,
+ * 弱网/移动端到达或处理顺序可能反转: content 抢先 flush 时 claimReasoning 拿到 null, 首条
+ * 回复落库时没有 thinkingChain, 之后到的 reasoning 永远不再被 claim → 思维链丢失.
+ *
+ * 这里在 reasoning 到达后补一刀: 若该 session 的首条 assistant 回复已落库且还没挂 thinkingChain,
+ * 就 claim 出 reasoning 回填到那条消息的 metadata, 再 fire progress 让 Chat 重渲染.
+ * 若首条回复还没落库 (reasoning 先到的正常情形), 不 claim、留 buffer 给正常路径, 这里是 no-op.
+ */
+const backfillReasoningSafely = async (sessionId?: string, charId?: string): Promise<void> => {
+  if (!sessionId || !charId) return;
+  try {
+    const msgs = await DB.getRecentMessagesByCharId(charId, 200);
+    const sessionMsgs = msgs
+      .filter((m) => m.role === 'assistant' && (m.metadata as any)?.sessionId === sessionId)
+      .sort((a, b) => ((a as any).id ?? 0) - ((b as any).id ?? 0));
+    if (sessionMsgs.length === 0) return; // content 还没落库, 留给正常 claim 路径
+    const first = sessionMsgs[0] as any;
+    if (first.metadata?.thinkingChain) return; // 正常 claim 已挂上, 不重复
+    if (typeof first.id !== 'number') return;
+
+    const buffered = await ActiveMsgStore.claimReasoning(sessionId);
+    const reasoning = buffered?.reasoningContent;
+    if (!reasoning) return;
+
+    await DB.updateMessageMetadata(first.id, (prev: any) => ({ ...(prev || {}), thinkingChain: reasoning }));
+    window.dispatchEvent(new CustomEvent('active-msg-progress', { detail: { charId } }));
+  } catch (e) {
+    console.warn('[ActiveMsg] backfill reasoning failed', sessionId, e);
+  }
+};
+
 const handleDeepLink = () => {
   const currentUrl = new URL(window.location.href);
   const charId = currentUrl.searchParams.get('activeMsgCharId');
@@ -491,6 +526,14 @@ export const ActiveMsgRuntime = {
         const type = event.data?.type;
         if (type === 'active-msg-received') {
           void flushInboxToChat();
+          return;
+        }
+
+        if (type === 'active-msg-reasoning') {
+          // 先确保已到的 content 落库 (flush 链串行), 再尝试把思维链回填到首条回复上.
+          void flushInboxToChat().then(() =>
+            backfillReasoningSafely(event.data?.sessionId, event.data?.charId),
+          );
           return;
         }
 

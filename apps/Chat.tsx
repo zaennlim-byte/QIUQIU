@@ -649,32 +649,10 @@ const Chat: React.FC = () => {
 
     // （旧的"首次自动归档 banner"已移除，自动归档改为用户在神经链接里显式 opt-in）
 
-    // Reload char data when background emotion evaluation updates buffs
-    useEffect(() => {
-        const handler = (e: Event) => {
-            const detail = (e as CustomEvent).detail;
-            if (detail?.charId !== activeCharacterId) return;
-            // 优先用事件直接携带的 buffs/buffInjection 落 OSContext —— 不重读 DB, 避开
-            // saveCharacter 未等事务提交、以及 instant flush 下 DB 重读偶发拿旧值的竞态.
-            if (Array.isArray(detail.buffs)) {
-                updateCharacter(activeCharacterId, {
-                    activeBuffs: detail.buffs,
-                    buffInjection: typeof detail.buffInjection === 'string' ? detail.buffInjection : ''
-                });
-                return;
-            }
-            // 无 buffs 的纯 UI 刷新信号 (activeMsgRuntime line-300 等): 从 DB 兜底重读.
-            DB.getAllCharacters().then(all => {
-                const updated = all.find(c => c.id === activeCharacterId);
-                if (updated) updateCharacter(updated.id, {
-                    activeBuffs: updated.activeBuffs,
-                    buffInjection: updated.buffInjection
-                });
-            }).catch(() => {});
-        };
-        window.addEventListener('emotion-updated', handler);
-        return () => window.removeEventListener('emotion-updated', handler);
-    }, [activeCharacterId, updateCharacter]);
+    // buff 同步已上移到 OSContext 的 App 级 'emotion-updated' 监听 (无条件按事件 charId 更新内存,
+    // 不再受"当前是否开着该角色聊天页"限制). 之前这里有个 `charId === activeCharacterId` 守卫的
+    // handler, 导致 instant 模式下用户不在该角色页时 buff 回不到前端 (只落 DB), 故移除, 同时
+    // 避免和 OSContext 双写.
 
     // 🛟 人格抢救：进聊天后发现角色被卡在"情感型 0.3"显示（真实存储可能是 emotional/0.3，
     // 也可能是 undefined —— UI 的 `|| 'emotional'` 和 `?? 0.3` fallback 让两者看起来一样）。
