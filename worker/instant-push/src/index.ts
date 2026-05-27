@@ -2,7 +2,7 @@
  * SullyOS Instant Push — Cloudflare Worker entry.
  *
  * Phase 2 Round 2 (这次):
- *  - 升 @rei-standard/amsg-instant 到 ^0.8.0-next.3
+ *  - 升 @rei-standard/amsg-instant 到 0.8.1
  *  - 配置 onLLMOutput hook: SullyOS 业务标签分类器 (见 ./classifier.ts)
  *  - 数据标签 → tool-request push (客户端跑工具, POST /continue 续跑)
  *  - 副作用标签 → finish + metadata.directives (客户端重放)
@@ -212,14 +212,15 @@ async function cleanupExpiredD1Blobs(env: Env): Promise<void> {
 
   if (d1CleanupPromise) return d1CleanupPromise;
   d1CleanupPromise = (async () => {
+    const ready = await ensureD1BlobSchema(env);
+    if (!ready) return;
+
     await env.DB!.prepare(D1_DELETE_EXPIRED_SQL)
       .bind(Date.now())
       .run();
   })()
     .catch((e) => {
-      if (!String(e).includes('no such table')) {
-        console.error('[instant-push] blob sweeper failed', e);
-      }
+      console.error('[instant-push] blob sweeper failed', e);
     })
     .finally(() => {
       d1CleanupPromise = null;
@@ -439,18 +440,18 @@ export default {
       body = null; // 非 JSON / 解析失败: 不影响主路径
     }
     const requestedEnv = withRequestOversizeTransport(env, body);
-    ctx.waitUntil(ensureD1BlobSchema(requestedEnv));
-    scheduleD1BlobCleanup(requestedEnv, ctx);
+    const workerEnv = await prepareBlobStoreEnv(requestedEnv);
+    scheduleD1BlobCleanup(workerEnv, ctx);
 
     // 情绪评估不依赖主回复内容 (用 body.messages = 与主回复同一批消息, 跟本地一样不含新回复),
     // 所以与主回复**并行**跑, 而不是 await cfWorker.fetch (流式输出 + 推送 + 收尾可能拖 ~30s)
     // 完成后才启动 —— 砍掉情绪评估的启动延迟, 让 buff / "情绪分析中" 徽章尽快结算.
     if (body?.emotionEval) {
       console.log('[TIMING] emotion: dispatched', new Date().toISOString());
-      ctx.waitUntil(runEmotionEval(body, requestedEnv, request.url));
+      ctx.waitUntil(runEmotionEval(body, workerEnv, request.url));
     }
     console.log('[TIMING] reply: dispatched', new Date().toISOString());
-    return await (cfWorker as any).fetch(request, requestedEnv, ctx);
+    return await (cfWorker as any).fetch(request, workerEnv, ctx);
   },
   async scheduled(_event: unknown, env: Env) {
     const workerEnv = await prepareBlobStoreEnv(env);
@@ -503,7 +504,7 @@ export type PushDecision =
 /**
  * 纯函数: 给 normalize 过的 ctx 字段, 出 { decision, pushPayloads }.
  *
- * amsg-instant 0.8.0-next.4 起 hook 返回 pushPayloads 数组, lib 不做 split, hook
+ * amsg-instant 0.8+ hook 返回 pushPayloads 数组, lib 不做 split, hook
  * 自己负责把内容切成 N 个独立 push. 我们用 sanitizeIntoSegments 把 LLM 输出
  * 切成 segments (按换行 + CJK 空格切, 跟客户端 chatParser.chunkText 一致),
  * 每个 segment 一条 push, banner 显示 sanitized 版本, message 保留 raw 让客户端
@@ -643,7 +644,7 @@ function buildDirectiveOnlyPush(args: {
 
 /**
  * 单 segment → 单 ContentPush. messageId 显式给唯一值 ( amsg-shared typedef
- * 要求, 不能 undefined ). next.4 lib runtime 看到 hook 已设 messageId 就不动,
+ * 要求, 不能 undefined ). 0.8+ lib runtime 看到 hook 已设 messageId 就不动,
  * 只对未设的自动补 _chunk_${i} 后缀.
  */
 function buildSegmentPush(args: {
@@ -665,7 +666,7 @@ function buildSegmentPush(args: {
   const { seg, baseCommon, notificationTitle, callerMetadata, iteration, chunkIdx, sessionId, directives } = args;
   // notification.body 跟 message 显示文本可以不一样 (SEND_EMOJI 在 banner 上是
   // [表情：x], 在 message 里是 [[SEND_EMOJI: x]] 让客户端 Step 9 渲染 sticker).
-  // 即使 sanitized === raw 也照样塞 — next.4 lib 不再 clone notification 跨 chunk,
+  // 即使 sanitized === raw 也照样塞 — 0.8+ lib 不再 clone notification 跨 chunk,
   // 每条独立, 不会重复占 size.
   return {
     ...buildContentPush({

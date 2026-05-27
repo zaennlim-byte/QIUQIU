@@ -58,13 +58,13 @@ describe('sendInstantPush splitPattern injection', () => {
     } as any);
   });
 
-  it('next.4 不再注入 splitPattern, payload 直接 stringify', async () => {
+  it('0.8+ 不再注入 splitPattern, payload 直接 stringify', async () => {
     await sendInstantPush(basePayload());
     expect(fetch).toHaveBeenCalled();
     const callArgs = vi.mocked(fetch).mock.calls[0];
     const init = callArgs[1] as RequestInit;
     const body = JSON.parse(init.body as string);
-    // amsg-instant 0.8.0-next.4 起 splitPattern 字段被服务端拒收, 客户端也不再带
+    // amsg-instant 0.8+ splitPattern 字段被服务端拒收, 客户端也不再带
     expect(body.splitPattern).toBeUndefined();
   });
 

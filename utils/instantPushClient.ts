@@ -536,7 +536,7 @@ export async function sendInstantPush(
   const url = `${normalizeWorkerUrl(cfg.workerUrl || '')}/instant`;
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (cfg.clientToken) headers['X-Client-Token'] = cfg.clientToken;
-  // amsg-instant 0.8.0-next.4 起删了 splitPattern 字段, lib 不再做 split, hook
+  // amsg-instant 0.8+ 删了 splitPattern 字段, lib 不再做 split, hook
   // 自己返 pushPayloads 数组. caller 这边不用再兜底注入。
   // oversizeTransport 是 SullyOS Worker wrapper 字段, 用前台开关决定本次大包走 multipart / D1。
   const wirePayload: InstantPushPayload = {

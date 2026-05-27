@@ -15,6 +15,8 @@
  *  - notification 专用 / Step 9-相关规则: utils/applyAssistantPostProcessing.ts:normalizeAiContent
  */
 
+import { segmentTextWithProtectedBlocks } from '@rei-standard/amsg-instant';
+
 // ─── 底层 helper (共享, 无歧义清理) ─────────────────────────────────────────
 
 /** `\\n` 字面 → 真实换行. 必须先跑, 否则后续 ^ 行锚定失效. */
@@ -233,7 +235,7 @@ export function sanitizeForBubble(
   return result;
 }
 
-// ─── Segments API (amsg-instant 0.8.0-next.4+ pushPayloads) ────────────────
+// ─── Segments API (amsg-instant 0.8+ pushPayloads) ─────────────────────────
 
 /**
  * 一段内容 → 一条 push.
@@ -250,6 +252,12 @@ export interface Segment {
   sanitized: string;
 }
 
+interface ProtectedAtomSegment {
+  raw: string;
+  sanitized: unknown;
+  protect: boolean;
+}
+
 /**
  * worker push notification + bubble 共用的分段器.
  *
@@ -257,9 +265,9 @@ export interface Segment {
  *  1. Phase 1   — 全文 strip suppress content (think 块 / INNER_STATE / 业务标签 /
  *                  时间戳 leak / source tag / 历史 leak / divider / 老 trans). 必须先全文
  *                  跑, 因为 think 跨多行, 单行 chunk 看不到完整块.
- *  1.5. Phase 1.5 — 把客户端要二次消费的"原子语义块"用 STX sentinel 占位符替换出来,
+ *  1.5. Phase 1.5 — 用 amsg-instant 标准保护分段器识别客户端要二次消费的"原子语义块",
  *                   防止 chunkText 按 \n 把它们切碎: [html]...[/html] / <翻译>...</翻译> /
- *                   <语音>...</语音>. 占位符两侧加 \n 让 chunkText 必把它独立成 chunk.
+ *                   <语音>...</语音>. 保护块两侧按旧逻辑补 \n, 让 chunkText 必把它独立成 chunk.
  *  2. Phase 2   — chunkText: 按 `\n` 切 + 按 CJK 字符之间的空格切, 跟客户端
  *                  `chatParser.chunkText` 字节对齐 (LLM 在 prompt 引导下用换行断句).
  *  3. Phase 3   — 还原占位符 (独占 chunk → 直接成单 segment; 同行 inline → 替换回原文 +
@@ -281,33 +289,38 @@ export function sanitizeIntoSegments(text: string): Segment[] {
   let cleaned = stripLiteralBackslashN(text);
   cleaned = stripThinkBlocks(cleaned);
 
-  // Phase 1.5: 把客户端 applyAssistantPostProcessing / Chat.tsx 还要消费的"原子语义块"
-  // 用占位符替换出来, 防止 chunkText 按 \n / 后续 extractTranslationOriginal 把它们切碎/抹光.
-  //   - [html]...[/html]                            → 客户端 Step 5 渲染 HTML 卡
-  //   - <翻译><原文>X</原文><译文>Y</译文></翻译>  → 客户端 Step 8 渲染双语气泡
-  //   - <语音>...</语音>                            → 客户端 Chat.tsx extractVoiceTag 触发 auto-TTS
-  // 占位符两侧加 \n, chunkText 必把它独立成 chunk; Phase 3 还原成单 segment.
-  // sentinel 用 STX (0x02) 保证不跟 LLM 文本里的字面值 "B0" 等撞.
-  const SENTINEL = String.fromCharCode(2);
-  interface ProtectedBlock { raw: string; sanitized: string; }
-  const blocks: ProtectedBlock[] = [];
-  const protect = (raw: string, sanitized: string): string => {
-    const idx = blocks.length;
-    blocks.push({ raw, sanitized });
-    return `\n${SENTINEL}B${idx}${SENTINEL}\n`;
-  };
-  cleaned = cleaned.replace(
-    /\[html\][\s\S]*?\[\/html\]/gi,
-    (m) => protect(m, '[HTML 卡片]'),
-  );
-  cleaned = cleaned.replace(
-    /<翻译>\s*<原文>([\s\S]*?)<\/原文>\s*<译文>[\s\S]*?<\/译文>\s*<\/翻译>/g,
-    (m, original) => protect(m, (original || '').trim() || '[翻译]'),
-  );
-  cleaned = cleaned.replace(
-    /<(语音|語音)>([\s\S]*?)<\/\1>/g,
-    (m, _tag, inner) => protect(m, (inner || '').trim() || '[语音]'),
-  );
+  // Phase 1.5: 原子语义块交给 amsg-instant 标准 protected-block splitter 识别,
+  // 再桥回旧 pipeline。这样只替换"如何保护原子块", 不改变后续清洗/分段语义。
+  const ATOM_MARKER = String.fromCharCode(2);
+  const atomBlocks: Segment[] = [];
+  const atomSegments = segmentTextWithProtectedBlocks(cleaned, {
+    splitText: (plainText: string) => [plainText],
+    protectedPatterns: [
+      {
+        pattern: /\[html\][\s\S]*?\[\/html\]/i,
+        preview: '[HTML 卡片]',
+      },
+      {
+        pattern: /<翻译>\s*<原文>([\s\S]*?)<\/原文>\s*<译文>[\s\S]*?<\/译文>\s*<\/翻译>/,
+        preview: (_raw: string, match: RegExpMatchArray) => (match[1] || '').trim() || '[翻译]',
+      },
+      {
+        pattern: /<(语音|語音)>([\s\S]*?)<\/\1>/,
+        preview: (_raw: string, match: RegExpMatchArray) => (match[2] || '').trim() || '[语音]',
+      },
+    ],
+  }) as ProtectedAtomSegment[];
+  cleaned = atomSegments.map((seg) => {
+    if (!seg.protect) return seg.raw;
+    const idx = atomBlocks.length;
+    atomBlocks.push({
+      raw: seg.raw,
+      sanitized: typeof seg.sanitized === 'string'
+        ? seg.sanitized
+        : sanitizeTextForBanner(seg.raw),
+    });
+    return `\n${ATOM_MARKER}B${idx}${ATOM_MARKER}\n`;
+  }).join('');
 
   cleaned = extractTranslationOriginal(cleaned); // 兜底吃残留的 <译文> / <翻译> 标签
   cleaned = stripInnerState(cleaned);
@@ -325,14 +338,14 @@ export function sanitizeIntoSegments(text: string): Segment[] {
   // 把 DB / React / Capacitor 依赖拖进 worker bundle)
   const rawChunks = chunkText(cleaned);
 
-  // Phase 3: 还原占位符 + 拆 SEND_EMOJI + banner-only 替换
-  const SOLO_RE = new RegExp(`^${SENTINEL}B(\\d+)${SENTINEL}$`);
-  const GLOBAL_RE = new RegExp(`${SENTINEL}B(\\d+)${SENTINEL}`, 'g');
+  // Phase 3: 还原原子块占位符 + 拆 SEND_EMOJI + banner-only 替换
+  const SOLO_RE = new RegExp(`^${ATOM_MARKER}B(\\d+)${ATOM_MARKER}$`);
+  const GLOBAL_RE = new RegExp(`${ATOM_MARKER}B(\\d+)${ATOM_MARKER}`, 'g');
   const segments: Segment[] = [];
   for (const rawChunk of rawChunks) {
     const soloMatch = rawChunk.trim().match(SOLO_RE);
     if (soloMatch) {
-      const blk = blocks[Number(soloMatch[1])];
+      const blk = atomBlocks[Number(soloMatch[1])];
       if (blk) segments.push({ raw: blk.raw, sanitized: blk.sanitized });
       continue;
     }
@@ -349,7 +362,7 @@ export function sanitizeIntoSegments(text: string): Segment[] {
       // sanitized 路径 sanitizeTextForBanner 会再把 [html]/<翻译>/<语音>/引用 折成 placeholder.
       let rawText = part.text.replace(
         GLOBAL_RE,
-        (_m, n) => blocks[Number(n)]?.raw || '',
+        (_m, n) => atomBlocks[Number(n)]?.raw || '',
       );
       rawText = rawText.trim();
       if (!rawText) continue;

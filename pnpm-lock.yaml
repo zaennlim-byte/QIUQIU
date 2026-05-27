@@ -45,20 +45,20 @@ importers:
         specifier: ^2.1.10
         version: 2.1.10(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@rei-standard/amsg-client':
-        specifier: 2.3.0-next.2
-        version: 2.3.0-next.2
+        specifier: 2.3.0
+        version: 2.3.0
       '@rei-standard/amsg-instant':
-        specifier: 0.8.0-next.8
-        version: 0.8.0-next.8
+        specifier: 0.8.1
+        version: 0.8.1
       '@rei-standard/amsg-server':
-        specifier: 2.4.0-next.2
-        version: 2.4.0-next.2(@neondatabase/serverless@1.1.0)(pg@8.21.0)
+        specifier: 2.4.0
+        version: 2.4.0(@neondatabase/serverless@1.1.0)(pg@8.21.0)
       '@rei-standard/amsg-shared':
-        specifier: 0.1.0-next.4
-        version: 0.1.0-next.4
+        specifier: 0.1.0
+        version: 0.1.0
       '@rei-standard/amsg-sw':
-        specifier: 2.1.0-next.4
-        version: 2.1.0-next.4
+        specifier: 2.1.1
+        version: 2.1.1
       jszip:
         specifier: ^3.10.1
         version: 3.10.1
@@ -106,14 +106,14 @@ importers:
   worker/instant-push:
     dependencies:
       '@rei-standard/amsg-instant':
-        specifier: 0.8.0-next.8
-        version: 0.8.0-next.8
+        specifier: 0.8.1
+        version: 0.8.1
       '@rei-standard/amsg-shared':
-        specifier: 0.1.0-next.4
-        version: 0.1.0-next.4
+        specifier: 0.1.0
+        version: 0.1.0
       '@rei-standard/amsg-sw':
-        specifier: 2.1.0-next.4
-        version: 2.1.0-next.4
+        specifier: 2.1.1
+        version: 2.1.1
     devDependencies:
       wrangler:
         specifier: ^3.78.0
@@ -851,16 +851,16 @@ packages:
       react: '>= 16.8'
       react-dom: '>= 16.8'
 
-  '@rei-standard/amsg-client@2.3.0-next.2':
-    resolution: {integrity: sha512-Aw1hAd7o6fpIyXcuBnORQr1pox9MemafU4YyLKZg4ZlG5zuSwGRyGnrnfTDXm4vNvNlTJaiATH/YgsA4ph5Kow==}
+  '@rei-standard/amsg-client@2.3.0':
+    resolution: {integrity: sha512-P8tI4Fh31OFaE5CjLKtsUZYYVWWznUA7q0akl+LRrF6xE/xj4XzNE5woA2C4ELVnlsOzKxxxnwe1RYEF5mvO/Q==}
     engines: {node: '>=20'}
 
-  '@rei-standard/amsg-instant@0.8.0-next.8':
-    resolution: {integrity: sha512-Z3eVztg4ODL19c4ia+0oemL+2N08EPgbi0raFqU91BCU74JAD5yBUsgAdhUtQ3MvRWILBHpBEra6LT6wOOfz3Q==}
+  '@rei-standard/amsg-instant@0.8.1':
+    resolution: {integrity: sha512-amNQrpRCSvpGXJ++xAqg5ZfRRsVTAKrdpWwTuXWf1GdeVRNV2wjsE3NADDL2W0VUUTup5P+GQ7jhon2iavKgqQ==}
     engines: {node: '>=18'}
 
-  '@rei-standard/amsg-server@2.4.0-next.2':
-    resolution: {integrity: sha512-KDiyXLuDT1O2F4g7Yr1tgxc1/pjuaIzqSzEJ5pHPFOk64qUirKITVsf3hDVO0K1uSECT/x13+jaoT4v24CCKaw==}
+  '@rei-standard/amsg-server@2.4.0':
+    resolution: {integrity: sha512-/zNhyg5CzrPhqUuIQdBBlYQ7m5Y81AJcDzh+UNa+PsuYr5fs/FSbkCTxgr+z3USqnu7A9H0nqKCC9CwH/nbYVg==}
     engines: {node: '>=20'}
     peerDependencies:
       '@neondatabase/serverless': '>=0.9.0'
@@ -871,12 +871,12 @@ packages:
       pg:
         optional: true
 
-  '@rei-standard/amsg-shared@0.1.0-next.4':
-    resolution: {integrity: sha512-ZiIKxQCTR3xaHND++zYrliyJJIi4acEJCdSmdc6XbLIRH8d1Zzak+Sf7y9kZwt7aBO1K1cDqqEw8sS2hEYGmVg==}
+  '@rei-standard/amsg-shared@0.1.0':
+    resolution: {integrity: sha512-HyA60hLHFQTo3AY2ay0JjF2EHjimk2oToNhhuOmRRWZwk4Pu7EF3lcTa0O9b69KY4oOKdPq2qKeY7zL/RMR5lg==}
     engines: {node: '>=20'}
 
-  '@rei-standard/amsg-sw@2.1.0-next.4':
-    resolution: {integrity: sha512-go7ldOCmDlN7Fzmo6hKDqbisgsUU5cIsdlNgUbfUoKI/R1ZhPoUUc2Cpo7ZGlcqY+mZOOeXFBwAcXfH0IK7GoQ==}
+  '@rei-standard/amsg-sw@2.1.1':
+    resolution: {integrity: sha512-6bqXtNqLxJj2yO4a5+ViI+vo+s0dl0u5B2AMpdhuP8g8EFNZQmwt5Bz0X6vvfN00HhE08yQgqaYas307C1pvaw==}
     engines: {node: '>=20'}
 
   '@rolldown/pluginutils@1.0.0-beta.27':
@@ -2732,18 +2732,18 @@ snapshots:
       react: 18.3.1
       react-dom: 18.3.1(react@18.3.1)
 
-  '@rei-standard/amsg-client@2.3.0-next.2':
+  '@rei-standard/amsg-client@2.3.0':
     dependencies:
-      '@rei-standard/amsg-shared': 0.1.0-next.4
+      '@rei-standard/amsg-shared': 0.1.0
 
-  '@rei-standard/amsg-instant@0.8.0-next.8':
+  '@rei-standard/amsg-instant@0.8.1':
     dependencies:
-      '@rei-standard/amsg-shared': 0.1.0-next.4
+      '@rei-standard/amsg-shared': 0.1.0
 
-  '@rei-standard/amsg-server@2.4.0-next.2(@neondatabase/serverless@1.1.0)(pg@8.21.0)':
+  '@rei-standard/amsg-server@2.4.0(@neondatabase/serverless@1.1.0)(pg@8.21.0)':
     dependencies:
       '@netlify/blobs': 8.2.0
-      '@rei-standard/amsg-shared': 0.1.0-next.4
+      '@rei-standard/amsg-shared': 0.1.0
       web-push: 3.6.7
     optionalDependencies:
       '@neondatabase/serverless': 1.1.0
@@ -2751,11 +2751,11 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@rei-standard/amsg-shared@0.1.0-next.4': {}
+  '@rei-standard/amsg-shared@0.1.0': {}
 
-  '@rei-standard/amsg-sw@2.1.0-next.4':
+  '@rei-standard/amsg-sw@2.1.1':
     dependencies:
-      '@rei-standard/amsg-shared': 0.1.0-next.4
+      '@rei-standard/amsg-shared': 0.1.0
 
   '@rolldown/pluginutils@1.0.0-beta.27': {}
 

@@ -29,7 +29,7 @@ function pushes(r: ReturnType<typeof buildPushDecision>): AnyPushPayload[] {
   return r.pushPayloads as AnyPushPayload[];
 }
 
-// ─── D 系列: push payload 三条路径 (next.4 pushPayloads) ─────────────────────
+// ─── D 系列: push payload 三条路径 (0.8+ pushPayloads) ───────────────────────
 
 describe('buildPushDecision D 系列 (pushPayloads 数组)', () => {
   it('D1 finish 单行干净文本 → 1 个 segment, 1 条 push', () => {
@@ -37,7 +37,7 @@ describe('buildPushDecision D 系列 (pushPayloads 数组)', () => {
     expect(r.decision).toBe('finish');
     const ps = pushes(r);
     expect(ps).toHaveLength(1);
-    // raw 跟 sanitized 在普通文本上一样, 但都塞 notification.body (next.4 不再
+    // raw 跟 sanitized 在普通文本上一样, 但都塞 notification.body (0.8+ 不再
     // 用条件去重, lib 不 clone notification 跨 chunk, 每条独立)
     expect(ps[0].message).toBe('你好');
     expect(ps[0].notification).toEqual({ title: '来自 X', body: '你好' });
@@ -90,7 +90,7 @@ describe('buildPushDecision D 系列 (pushPayloads 数组)', () => {
     const r = buildPushDecision(baseInput({
       llmOutputText: '<think>internal monologue</think>',
     }));
-    // next.4: 0 segments → skip-push (放弃这一轮, 不弹通知)
+    // 0.8+: 0 segments → skip-push (放弃这一轮, 不弹通知)
     // 跟 next.3 的 ZWSP 占位是设计差异 — 多 push 模式下没必要强行占位
     expect(r.decision).toBe('skip-push');
   });

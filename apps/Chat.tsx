@@ -1928,6 +1928,9 @@ const Chat: React.FC = () => {
               : {
                   backgroundImage: 'none',
                 };
+    const chatAvatarSizeClass = osTheme.chatAvatarSize === 'small' ? 'w-7 h-7' : osTheme.chatAvatarSize === 'large' ? 'w-12 h-12' : 'w-9 h-9';
+    const chatAvatarRadiusClass = osTheme.chatAvatarShape === 'square' ? 'rounded-sm' : osTheme.chatAvatarShape === 'rounded' ? 'rounded-xl' : 'rounded-full';
+    const chatPendingAvatarClass = `${chatAvatarSizeClass} ${chatAvatarRadiusClass} object-cover`;
 
     return (
         <div 
@@ -2403,7 +2406,7 @@ const Chat: React.FC = () => {
 
                 {instantToolStatus && !selectionMode && (
                     <div className="flex items-end gap-3 px-3 mb-4 animate-fade-in">
-                        <img src={char.avatar} className={`${osTheme.chatAvatarSize === 'small' ? 'w-7 h-7' : osTheme.chatAvatarSize === 'large' ? 'w-12 h-12' : 'w-9 h-9'} ${osTheme.chatAvatarShape === 'square' ? 'rounded-sm' : osTheme.chatAvatarShape === 'rounded' ? 'rounded-xl' : 'rounded-[10px]'} object-cover`} />
+                        <img src={char.avatar} className={chatPendingAvatarClass} />
                         <div className={`max-w-[78%] px-4 py-3 rounded-2xl shadow-sm border ${
                             instantToolStatus.phase === 'failed'
                                 ? 'bg-rose-50 border-rose-100 text-rose-700'
@@ -2425,7 +2428,7 @@ const Chat: React.FC = () => {
 
                 {(isTyping || recallStatus || searchStatus || diaryStatus || isProactiveComposing) && !selectionMode && (
                     <div className="flex items-end gap-3 px-3 mb-6 animate-fade-in">
-                        <img src={char.avatar} className={`${osTheme.chatAvatarSize === 'small' ? 'w-7 h-7' : osTheme.chatAvatarSize === 'large' ? 'w-12 h-12' : 'w-9 h-9'} ${osTheme.chatAvatarShape === 'square' ? 'rounded-sm' : osTheme.chatAvatarShape === 'rounded' ? 'rounded-xl' : 'rounded-[10px]'} object-cover`} />
+                        <img src={char.avatar} className={chatPendingAvatarClass} />
                         <div className="bg-white px-4 py-3 rounded-2xl shadow-sm">
                             {isProactiveComposing && !isTyping && !recallStatus && !searchStatus && !diaryStatus ? (
                                 <div className="flex items-center gap-2 text-xs text-teal-600 font-medium">

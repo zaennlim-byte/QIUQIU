@@ -36,11 +36,13 @@ import { installReiSW } from '@rei-standard/amsg-sw';
  *           删除了应用层的 reasoning chunking 逻辑，现收到完整 reasoningContent。
  *           content 通知兜底也交给 amsg-sw，应用层只负责写 inbox / tool / emotion。
  *           修复了在应用关闭期间收到分片推送丢失的问题（通过 notificationclick 恢复及前台拦截 REI_AMSG_PUSH）。
+ *  - 1.9.1: 升级 amsg-sw 2.1.1，沿用插件侧 multipart 同 id 串行锁和标准通知标题 fallback。
  *  - 1.10.0: saveReasoningToBuffer 写完后 notifyClients('active-msg-reasoning')，让主线程在
  *           "content 抢先于 reasoning 落库" 的竞态下把思维链回填到已存的首条回复上，
  *           修复 instant 模式弱网/移动端思维链(心象)间歇丢失。
+ *  - 1.10.1: 合并 1.10.0 思维链回填修复与 ReiStandard amsg-sw 2.1.1 升级。
  */
-const SW_VERSION = '1.10.0';
+const SW_VERSION = '1.10.1';
 
 const PING_INTERVAL = 15_000;
 const MAX_MANUAL_ALIVE_MS = 5 * 60_000;
@@ -68,7 +70,7 @@ installReiSW(sw, {
   defaultIcon: './icons/icon-192.png',
   defaultBadge: './icons/icon-192.png',
   multipart: { enabled: true },
-  onBusinessPayload: async (payload) => {
+  onBusinessPayload: async (payload: any) => {
     await saveIncomingActiveMessage(payload);
   },
 });

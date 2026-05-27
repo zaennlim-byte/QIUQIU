@@ -218,7 +218,7 @@ describe('bubble vs notification differences', () => {
   });
 });
 
-// ─── sanitizeIntoSegments (amsg-instant 0.8.0-next.4 pushPayloads) ─────────
+// ─── sanitizeIntoSegments (amsg-instant 0.8+ pushPayloads) ─────────────────
 
 describe('sanitizeIntoSegments', () => {
   it('单行普通文本 → 1 个 segment, raw === sanitized', () => {

@@ -221,7 +221,7 @@ const processInboxMessageWithPostProcessing = async (message: ActiveMsg2InboxMes
     // 把 worker hook 塞进 metadata.directives 的副作用结构化重放出来 (POKE/TRANSFER/ADD_EVENT/
     // schedule_message/MUSIC_ACTION/XHS_*). applyAssistantPostProcessing 会反向拼回 tag 喂给
     // chatParser + 内联 XHS handler.
-    // amsg-instant 0.8.0-next.4 起一个 user turn 可能产 N 条 push, directives 只应该
+    // amsg-instant 0.8+ 一个 user turn 可能产 N 条 push, directives 只应该
     // replay 一次. worker buildPushDecision 把 directives 挂在最后一条 push 上,
     // 这里加 isLastChunk 守卫双保险, 防未来 worker bug 在多条 push 都塞 directives.
     // 老 worker (无 messageIndex/totalMessages 字段) ?? 0 fallback, 0===0 也算 last.
