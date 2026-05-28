@@ -20,6 +20,7 @@ import { buildThinkingChainPrompt } from './thinkingChainPrompt';
 import { buildMcdMiniAppContextBlock } from './mcdToolBridge';
 import type { McdMiniAppSnapshot } from './mcdToolBridge';
 import type { MusicCfg, Song, LyricLine, MusicPlaybackSnapshot } from '../context/MusicContext';
+import { isPromptBuildSkipped } from './devDebug';
 
 export interface UserListeningContext {
     songName: string;
@@ -70,7 +71,13 @@ export interface BuildChatPayloadResult {
     /** [system, ...cleanedApiMessages, 末尾 bilingual reminder?] —— 主 API 直接发这个 */
     fullMessages: Array<{ role: string; content: any }>;
     /** 调试用：bilingual / mcd 是否实际注入 */
-    flags: { bilingualActive: boolean; mcdActive: boolean; htmlActive: boolean; thinkingActive: boolean };
+    flags: {
+        bilingualActive: boolean;
+        mcdActive: boolean;
+        htmlActive: boolean;
+        thinkingActive: boolean;
+        promptBuildSkipped: boolean;
+    };
 }
 
 /**
@@ -109,6 +116,21 @@ function deriveListeningFromSnapshot(
     return { userListeningContext, isListeningTogether, musicCfg: cfg };
 }
 
+function cleanApiMessages(apiMessages: Array<{ role: string; content: any }>): Array<{ role: string; content: any }> {
+    return apiMessages.map((msg: any) => {
+        if (typeof msg.content !== 'string') return msg;
+        let c: string = msg.content;
+        if (c.toLowerCase().includes('%%bilingual%%')) {
+            const idx = c.toLowerCase().indexOf('%%bilingual%%');
+            c = c.substring(0, idx).trim();
+        }
+        if (c.includes('<翻译>')) {
+            c = c.replace(/<翻译>\s*<原文>([\s\S]*?)<\/原文>\s*<译文>[\s\S]*?<\/译文>\s*<\/翻译>/g, '$1').trim();
+        }
+        return { ...msg, content: c };
+    });
+}
+
 /**
  * 构造完整 chat 请求载荷。顺序严格对齐 useChatAI.ts 现有实现：
  *
@@ -132,6 +154,24 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
         translationConfig, htmlMode, thinkingChain, mcdMiniSnap,
     } = input;
     const recentMsgsHint = input.recentMsgsHint ?? historyMsgs;
+
+    if (isPromptBuildSkipped()) {
+        const { apiMessages } = ChatPrompts.buildMessageHistory(historyMsgs, contextLimit, char, userProfile, emojis);
+        const cleanedApiMessages = cleanApiMessages(apiMessages);
+        console.warn('[DevDebug] Prompt Build skipped: sending chat history without system prompt injection.');
+        return {
+            systemPrompt: '',
+            cleanedApiMessages,
+            fullMessages: [...cleanedApiMessages],
+            flags: {
+                bilingualActive: false,
+                mcdActive: false,
+                htmlActive: false,
+                thinkingActive: false,
+                promptBuildSkipped: true,
+            },
+        };
+    }
 
     // ── 1. Memory Palace 向量召回 ─────────────────────────
     await injectMemoryPalace(char, recentMsgsHint, undefined, userProfile?.name);
@@ -204,18 +244,7 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
     const { apiMessages } = ChatPrompts.buildMessageHistory(historyMsgs, contextLimit, char, userProfile, emojis);
 
     // ── 8. 剥离历史里旧的双语标签 ─────────────────────────
-    const cleanedApiMessages = apiMessages.map((msg: any) => {
-        if (typeof msg.content !== 'string') return msg;
-        let c: string = msg.content;
-        if (c.toLowerCase().includes('%%bilingual%%')) {
-            const idx = c.toLowerCase().indexOf('%%bilingual%%');
-            c = c.substring(0, idx).trim();
-        }
-        if (c.includes('<翻译>')) {
-            c = c.replace(/<翻译>\s*<原文>([\s\S]*?)<\/原文>\s*<译文>[\s\S]*?<\/译文>\s*<\/翻译>/g, '$1').trim();
-        }
-        return { ...msg, content: c };
-    });
+    const cleanedApiMessages = cleanApiMessages(apiMessages);
 
     // ── 9. 麦当劳小程序上下文（在 cleanedApiMessages 之后追加到 systemPrompt） ──
     const mcdActive = !!mcdMiniSnap?.open;
@@ -242,6 +271,6 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
         systemPrompt,
         cleanedApiMessages,
         fullMessages,
-        flags: { bilingualActive, mcdActive, htmlActive, thinkingActive },
+        flags: { bilingualActive, mcdActive, htmlActive, thinkingActive, promptBuildSkipped: false },
     };
 }

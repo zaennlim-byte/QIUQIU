@@ -29,6 +29,7 @@ import {
 import { applyAssistantPostProcessing, type XhsCaches } from '../utils/applyAssistantPostProcessing';
 import { ActiveMsgStore } from '../utils/activeMsgStore';
 import { applyEmotionEvalRaw } from '../utils/emotionApply';
+import { isEmotionEvalSkipped } from '../utils/devDebug';
 
 // ─── 情绪评估（副API，fire & forget）───
 
@@ -435,6 +436,10 @@ export const useChatAI = ({
             }
 
             const deps = emotionEvalDepsRef.current;
+            if (isEmotionEvalSkipped()) {
+                try { await ActiveMsgStore.clearPendingEmotionEval(charIdAtMount); } catch { /* ignore */ }
+                return;
+            }
             const emotionApi = (char.emotionConfig.api?.baseUrl)
                 ? char.emotionConfig.api
                 : { baseUrl: deps.apiConfig.baseUrl, apiKey: deps.apiConfig.apiKey, model: deps.apiConfig.model };
@@ -471,6 +476,11 @@ export const useChatAI = ({
                     thinkingChain: { enabled: !!(char as any).showThinkingChain, customPrompt: (char as any).thinkingChainCustomPrompt },
                     mcdMiniSnap: mcdMiniOpen ? mcdMiniSnap : undefined,
                 });
+
+                if (payload.flags.promptBuildSkipped) {
+                    try { await ActiveMsgStore.clearPendingEmotionEval(charIdAtMount); } catch { /* ignore */ }
+                    return;
+                }
 
                 setEmotionStatus('evaluating');
                 const innerState = await evaluateEmotionBackground(
@@ -649,6 +659,7 @@ export const useChatAI = ({
             const systemPrompt = payload.systemPrompt;
             const cleanedApiMessages = payload.cleanedApiMessages;
             const fullMessages = payload.fullMessages;
+            const promptBuildSkipped = payload.flags.promptBuildSkipped;
             if (payload.flags.mcdActive) {
                 console.log(`🍔 [MCD-MiniApp] 注入协同点餐上下文 step=${mcdMiniSnap?.step} cartItems=${mcdMiniSnap?.cart?.length || 0} menuItems=${mcdMiniSnap?.menuMeals ? Object.keys(mcdMiniSnap.menuMeals).length : 0} nutrition=${mcdMiniSnap?.nutritionData ? mcdMiniSnap.nutritionData.length : 0}字`);
             }
@@ -671,7 +682,7 @@ export const useChatAI = ({
             //    - instant 模式: 不在客户端跑, 改把 eval prompt + 副 API 凭据塞进 instant 请求 (emotionEval 字段),
             //      worker 跑完主回复后跑 eval 并推 emotion_update 回来, 客户端 flush 时落 buff —— 这样前端被杀也算数,
             //      且不会跟客户端 eval 双跑双扣费. 见下方 instant 分支 + worker/instant-push + activeMsgRuntime.
-            const emotionEvalEnabled = !!(isScheduleFeatureOn(char) && char.emotionConfig?.enabled);
+            const emotionEvalEnabled = !!(!promptBuildSkipped && !isEmotionEvalSkipped() && isScheduleFeatureOn(char) && char.emotionConfig?.enabled);
             const instantOn = isInstantConfigReady();
             const emotionApi = emotionEvalEnabled
                 ? ((char.emotionConfig!.api?.baseUrl)
@@ -739,7 +750,7 @@ export const useChatAI = ({
             //  - reasoning_effort：OpenAI 系（o1/o3、GLM-4.5、deepseek-reasoner 等）
             //  - extra_body.thinking：LiteLLM 系桥
             // 关掉则一个都不传，避免无谓的 thinking token 计费。
-            if ((char as any).showThinkingChain) {
+            if (payload.flags.thinkingActive) {
                 const m: string = baseReqBody.model || '';
                 if (/^claude-/i.test(m) && !/-thinking$/i.test(m)) {
                     baseReqBody.model = `${m}-thinking`;
@@ -754,7 +765,7 @@ export const useChatAI = ({
             }
             // 小程序模式: 给 LLM 一个 UI 钩子工具 propose_cart_items, 推荐时可调用,
             // 工具不真改购物车也不调 MCP, 只是把推荐渲染成 + 加按钮卡片让用户决定
-            if (mcdMiniOpen) {
+            if (payload.flags.mcdActive) {
                 baseReqBody.tools = [MCD_PROPOSE_TOOL];
                 baseReqBody.tool_choice = 'auto';
             }
@@ -817,7 +828,7 @@ export const useChatAI = ({
             // 3.4 麦当劳小程序 propose_cart_items UI 钩子工具循环
             //     不调 MCP, 只把模型的 args 作为 mcd_card kind=proposal 落库, 让小程序聊天面板渲染
             //     成"+加进购物车"卡片。返回 ack 给模型继续走它的文字 reply。
-            if (mcdMiniOpen && data.choices?.[0]?.message?.tool_calls?.length) {
+            if (payload.flags.mcdActive && data.choices?.[0]?.message?.tool_calls?.length) {
                 const MAX_PROPOSE_LOOPS = 3;
                 let loopMessages = [...fullMessages];
                 for (let it = 0; it < MAX_PROPOSE_LOOPS; it++) {

@@ -223,6 +223,24 @@ VITE_HIDE_BUILD_BADGE=1 npm run build
 
 > 叮叮叮！把 badge 藏了不会让你的 fork 变正式版本，但截图会干净点。
 
+### 开发调试面板（DevDebugPanel）
+
+非 release 分支构建时（即 `__BUILD_BADGE_VISIBLE__` 为 `true`），右下角除了 build badge 还会多一颗小扳手浮球。点开就是 **DevDebugPanel**——一个可拖拽的调试面板，专治"角色怎么又不说话了"综合症。
+
+面板里有三个开关：
+
+| 开关 | 干嘛的 |
+|------|--------|
+| **Skip Prompt Build** | 跳过 `ContextBuilder` 的整套 prompt 组装，直接把你的裸消息怼给 LLM。用来排查"是 prompt 太长撑爆了还是 API 本身炸了" |
+| **Skip Emotion Eval** | 跳过消息落库后的情绪评估管线（Russell 空间那套）。怀疑情绪评估拖慢响应 / 报错时开它 |
+| **Capture LLM Log** | 开始录制所有 LLM 请求/响应（含 Instant Push 通道）。录完可以一键复制成 JSON 丢给别人 debug，密钥字段自动 `<redacted>` 不用手动打码 |
+
+LLM 日志同时写 `localStorage` 和内存，最多保留 50 条 / 64 KB（先到先淘汰）。日志导出会自动带上当前分支和 commit hash，方便定位"到底是哪个版本炸的"。
+
+**注意**：跟 build badge 一样，这整套调试 UI 走的是 Vite `define` 编译时注入。在 `main` / `master` 上 `npm run build` 出来的产物里，`DevDebugPanel` 组件连同相关代码会被 esbuild 整棵树摇掉，不会出现在生产包里。换句话说——**用户永远看不到这个扳手，除非你故意在 release 分支 `VITE_SHOW_BUILD_BADGE=1`**。
+
+> 叮叮叮！调试面板不会让你的 Bug 自动修好，但至少能让你知道 Bug 在哪。大概。
+
 ### Instant Push 走独立 Worker
 
 Instant Push 是基于 `@rei-standard/amsg-instant 0.8` 的 LLM-driven Web Push 通道

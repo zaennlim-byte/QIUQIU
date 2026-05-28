@@ -15,6 +15,7 @@ import { setMinimaxRegion } from '../utils/minimaxEndpoint';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { Capacitor } from '@capacitor/core';
 import { formatBytes } from '../utils/format';
+import { isEmotionEvalSkipped } from '../utils/devDebug';
 
 const normalizeProactiveAiContent = (raw: string): string => {
   let cleaned = raw;
@@ -1432,7 +1433,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
 
               // 3c. 情绪评估 fire-and-forget — 与主 API 并行，沿用 useChatAI 的 API 选择逻辑：
               //     角色专属情绪 API > 主 apiConfig（与记忆宫殿副 API 完全独立）
-              if (isScheduleFeatureOn(char) && char.emotionConfig?.enabled) {
+              if (!payload.flags.promptBuildSkipped && !isEmotionEvalSkipped() && isScheduleFeatureOn(char) && char.emotionConfig?.enabled) {
                   const emotionApi = (char.emotionConfig.api?.baseUrl)
                       ? char.emotionConfig.api
                       : { baseUrl: apiConfigRef.current.baseUrl, apiKey: apiConfigRef.current.apiKey, model: apiConfigRef.current.model };
@@ -1451,7 +1452,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               const reqBody: any = { model: api.model, messages: fullMessages, temperature: 0.85, stream: false };
               // 思考链开启时显式向后端请求 extended thinking — 与 useChatAI 同步,
               // 不同代理认不同入口,全都试一遍,代理不识别的会自动忽略
-              if ((char as any).showThinkingChain) {
+              if (payload.flags.thinkingActive) {
                   const m: string = reqBody.model || '';
                   if (/^claude-/i.test(m) && !/-thinking$/i.test(m)) {
                       reqBody.model = `${m}-thinking`;
@@ -1470,7 +1471,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               // 思考链抽取 — 与 useChatAI 保持一致:reasoning_content 字段 + 主 content 里的 <think>/<thinking>/<thought> 块,
               // 拼接后挂到本回合首条 assistant 消息的 metadata.thinkingChain
               let pendingThinkingChain: string | null = null;
-              if ((char as any).showThinkingChain) {
+              if (payload.flags.thinkingActive) {
                   const lastReasoning = (data?.choices?.[0]?.message?.reasoning_content || '').trim();
                   const thinkBlocks: string[] = [];
                   const thinkPat = /<(think|thinking|thought)>([\s\S]*?)<\/\1>/gi;

@@ -1,6 +1,7 @@
 import { InstantPushConfig, APIConfig, type InstantOversizeTransport } from '../types';
 import { loadPushVapid, isPushVapidReady } from './pushVapid';
 import { ActiveMsgStore } from './activeMsgStore';
+import { appendDevDebugLlmLog } from './devDebug';
 import {
   SUBSCRIBE_SETTLE_MS,
   bytesToB64u,
@@ -707,10 +708,14 @@ export async function sendInstantPushAndAwaitReply(
 
   // 必须先挂监听再 send，否则极快的 push 可能漏掉
   let pushResolver: () => void = () => {};
+  let receivedPushDetail: any = null;
   const pushArrived = new Promise<void>((resolve) => { pushResolver = resolve; });
   const pushHandler = (e: Event) => {
     const detail = (e as CustomEvent).detail;
-    if (detail?.charId === charId) pushResolver();
+    if (detail?.charId === charId) {
+      receivedPushDetail = detail;
+      pushResolver();
+    }
   };
   window.addEventListener('active-msg-received', pushHandler);
 
@@ -750,6 +755,18 @@ export async function sendInstantPushAndAwaitReply(
       { keepalive: true, onDispatched: onPosted },
     );
     if (!sendResult.ok) {
+      appendDevDebugLlmLog({
+        url: cfg.workerUrl,
+        method: 'POST',
+        status: sendResult.http?.status,
+        requestBody: {
+          transport: 'instant-push',
+          sessionId,
+          ...business,
+          apiKey: business.apiKey ? '<redacted>' : '',
+        },
+        response: sendResult,
+      });
       return {
         ok: false,
         outcome: 'send-failed',
@@ -768,6 +785,21 @@ export async function sendInstantPushAndAwaitReply(
       new Promise<true>((r) => setTimeout(() => r(true), timeoutMs)),
     ]);
     if (timedOut) {
+      appendDevDebugLlmLog({
+        url: cfg.workerUrl,
+        method: 'POST',
+        status: 200,
+        requestBody: {
+          transport: 'instant-push',
+          sessionId,
+          ...business,
+          apiKey: business.apiKey ? '<redacted>' : '',
+        },
+        response: {
+          outcome: 'timeout',
+          waitedMs: Date.now() - sendStartedAt,
+        },
+      });
       return {
         ok: false,
         outcome: 'timeout',
@@ -783,6 +815,21 @@ export async function sendInstantPushAndAwaitReply(
         },
       };
     }
+    appendDevDebugLlmLog({
+      url: cfg.workerUrl,
+      method: 'POST',
+      status: 200,
+      requestBody: {
+        transport: 'instant-push',
+        sessionId,
+        ...business,
+        apiKey: business.apiKey ? '<redacted>' : '',
+      },
+      response: {
+        outcome: 'received',
+        push: receivedPushDetail,
+      },
+    });
     return { ok: true, outcome: 'received' };
   } finally {
     window.removeEventListener('active-msg-received', pushHandler);

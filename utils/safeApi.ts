@@ -6,6 +6,12 @@
  * instead of JSON responses.
  */
 
+import { appendDevDebugLlmLog } from './devDebug';
+
+function isChatCompletionUrl(url: string): boolean {
+    return url.includes('/chat/completions');
+}
+
 /** Parse a fetch Response as JSON safely (text-first, then JSON.parse) */
 export async function safeResponseJson(response: Response): Promise<any> {
     const text = await response.text();
@@ -127,6 +133,8 @@ export async function safeFetchJson(
 ): Promise<any> {
     const retryableStatuses = new Set([429, 500, 502, 503, 504]);
     let lastError: Error | null = null;
+    const urlStr = String(url);
+    let lastStatus: number | undefined;
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
         // 每次 attempt 建一个独立的 AbortController（仅用于 timeout）
@@ -149,6 +157,7 @@ export async function safeFetchJson(
         try {
             const response = await fetch(url, attemptOptions);
             if (timeoutHandle) clearTimeout(timeoutHandle);
+            lastStatus = response.status;
 
             if (!response.ok) {
                 // For retryable status codes, retry before giving up
@@ -165,7 +174,17 @@ export async function safeFetchJson(
                 throw new Error(`API Error ${response.status}: ${errMsg}`);
             }
 
-            return await safeResponseJson(response);
+            const data = await safeResponseJson(response);
+            if (isChatCompletionUrl(urlStr)) {
+                appendDevDebugLlmLog({
+                    url: urlStr,
+                    method: options.method,
+                    status: response.status,
+                    requestBody: options.body,
+                    response: data,
+                });
+            }
+            return data;
         } catch (e: any) {
             if (timeoutHandle) clearTimeout(timeoutHandle);
             lastError = e;
@@ -189,6 +208,15 @@ export async function safeFetchJson(
                 continue;
             }
 
+            if (isChatCompletionUrl(urlStr)) {
+                appendDevDebugLlmLog({
+                    url: urlStr,
+                    method: options.method,
+                    status: lastStatus,
+                    requestBody: options.body,
+                    error: e,
+                });
+            }
             throw e;
         }
     }

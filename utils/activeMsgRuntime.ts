@@ -12,6 +12,7 @@ import { applyEmotionEvalRaw } from './emotionApply';
 import { processNewMessages } from './memoryPalace/pipeline';
 import { loadMusicHooks } from '../context/MusicContext';
 import type { XhsNote } from './realtimeContext';
+import { appendDevDebugLlmLog, isLlmLogCaptureEnabled } from './devDebug';
 
 let initialized = false;
 
@@ -262,6 +263,65 @@ function extractDirectives(message: ActiveMsg2InboxMessage): PostProcessDirectiv
   return raw.filter((d) => d && typeof d === 'object' && typeof (d as any).type === 'string');
 }
 
+function getInstantSessionId(message: ActiveMsg2InboxMessage): string | undefined {
+  return (message as any).sessionId
+    || (message.metadata && (message.metadata as any).sessionId);
+}
+
+function getInstantMessageIndex(message: ActiveMsg2InboxMessage): number {
+  return Number((message as any).messageIndex ?? (message.metadata as any)?.messageIndex ?? 0);
+}
+
+function getInstantTotalMessages(message: ActiveMsg2InboxMessage): number {
+  return Number((message as any).totalMessages ?? (message.metadata as any)?.totalMessages ?? 0);
+}
+
+function toChatCompletionsUrl(baseUrl?: string): string {
+  const trimmed = (baseUrl || '').trim();
+  if (!trimmed) return 'instant-push';
+  if (/\/chat\/completions\/?$/i.test(trimmed)) return trimmed;
+  return `${trimmed.replace(/\/+$/, '')}/chat/completions`;
+}
+
+async function logInstantPushLlmExchange(message: ActiveMsg2InboxMessage): Promise<void> {
+  if (!isLlmLogCaptureEnabled()) return;
+
+  const sessionId = getInstantSessionId(message);
+  if (!sessionId) return;
+
+  try {
+    const session = await ActiveMsgStore.getOutboundSession(sessionId);
+    appendDevDebugLlmLog({
+      url: toChatCompletionsUrl(session?.apiCredentials?.baseUrl),
+      method: 'POST',
+      status: 200,
+      requestBody: session
+        ? {
+            transport: 'instant-push',
+            sessionId,
+            model: session.apiCredentials.model,
+            messages: session.messages,
+          }
+        : {
+            transport: 'instant-push',
+            sessionId,
+            requestUnavailable: 'outbound session not found',
+          },
+      response: {
+        transport: 'instant-push',
+        sessionId,
+        messageId: message.messageId,
+        messageIndex: getInstantMessageIndex(message),
+        totalMessages: getInstantTotalMessages(message),
+        raw_content: message.body,
+        metadata: message.metadata,
+      },
+    });
+  } catch (e) {
+    console.warn('[DevDebug] instant-push LLM log failed', sessionId, e);
+  }
+}
+
 /**
  * 跑 push 路径的尾段: Memory Palace 缓冲区处理 + 情绪 eval pending 标记.
  *
@@ -376,6 +436,7 @@ const flushInboxToChatImpl = async () => {
 
     if (looksLikeAssistantText) {
       try {
+        await logInstantPushLlmExchange(message);
         await processInboxMessageWithPostProcessing(message);
         routed = true;
       } catch (postErr) {
