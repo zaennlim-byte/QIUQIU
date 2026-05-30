@@ -11,7 +11,7 @@ import { injectMemoryPalace, ingestDiaryToPalace, type DiaryIngestResult } from 
 import { getRoomLabel } from '../utils/memoryPalace/types';
 import { Sparkle, Archive } from '@phosphor-icons/react';
 
-const INTRO_SEEN_KEY = 'journal_app_intro_seen_v2';
+const INTRO_SEEN_KEY = 'journal_app_intro_seen_v3';
 
 const TWEMOJI_BASE = 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72';
 const twemojiUrl = (codepoint: string) => `${TWEMOJI_BASE}/${codepoint}.png`;
@@ -68,6 +68,7 @@ const JournalApp: React.FC = () => {
         date: string;
         charName: string;
         summary: string;
+        summaryOrigin: 'palace_bullets' | 'prose_fallback';
         palace: DiaryIngestResult | null;
     } | null>(null);
     const [showStickerPanel, setShowStickerPanel] = useState(false);
@@ -121,14 +122,15 @@ const JournalApp: React.FC = () => {
             // Default to char tab if they replied
             setActiveTab(existing.charPage ? 'char' : 'user');
         } else {
-            // New Entry
+            // New Entry — 打 autoSync=true, 后续不在列表里显示手动归档按钮
             setCurrentEntry({
                 id: `diary-${Date.now()}`,
                 charId: selectedChar!.id,
                 date: date,
                 userPage: { text: '', paperStyle: 'grid', stickers: [] },
                 timestamp: Date.now(),
-                isArchived: false
+                isArchived: false,
+                autoSync: true,
             });
             setActiveTab('user');
         }
@@ -500,10 +502,16 @@ Structure:
         }
     };
 
-    // 手动归档: 把一条日记总结成神经链接条目 (char.memories) +
-    // 如果该角色开启了记忆宫殿,再用宫殿副 API 抽取结构化记忆节点并向量化入宫。
-    // 跟 chatapp 的归档逻辑对齐: 没开宫殿就是老路径只是 prompt 更详细;
-    // 开了宫殿就用 extractMemoriesFromBuffer + vectorizeAndStore (lightLLM 副 API)。
+    // 手动归档: 把一条日记总结成神经链接条目 (char.memories), 跟 chatapp 的自动归档对齐 —
+    //   - 开了记忆宫殿: 走副 API extractMemoriesFromBuffer 一次提取多条 MemoryNode → 节点入宫,
+    //     同一组节点 bullets 化拼成 MemoryFragment 写 char.memories (mood='diary_palace')。
+    //     不再调主 API。神经链接里那条 bullets 跟宫殿节点严格一比一对应。
+    //   - 没开记忆宫殿 / 副 API 缺失 / 副 API 没提取出: 回落主 API + 升级 prompt 出 150~300 字
+    //     散文式总结 → 写 char.memories (mood='diary')。这条沿用老路径升级版。
+    //
+    // mood 用 'diary_palace' / 'diary' 跟 chatapp 自动归档的 'palace' 区分,
+    // 避免被 mergePalaceFragmentsIntoMemories 误合并到当天聊天那条 palace bullets 里。
+    // 召回链路不看 mood,只是元数据 / UI 徽章,所以两种 mood 都正常进 chat 上下文。
     const handleArchiveDiary = async (diary: DiaryEntry) => {
         if (!selectedChar || diary.isArchived) return;
         if (!apiConfig.apiKey) { addToast('请先配置主 API', 'error'); return; }
@@ -514,8 +522,8 @@ Structure:
 
         setArchivingId(diary.id);
 
-        try {
-            // 1. 主 API: 生成更详细的归档总结 (老路径的升级版,文字更长更具体)
+        // 主 API 散文式总结 — 当宫殿没开 / 副 API 缺失 / 提取为空时的 fallback
+        const generateProseSummary = async (): Promise<string> => {
             const baseContext = ContextBuilder.buildCoreContext(selectedChar, userProfile);
             const charPart = diary.charPage?.text?.trim() || '(对方没有回复)';
             const prompt = `${baseContext}
@@ -544,7 +552,6 @@ ${charPart}
 3. **细节胜过抽象**: 多说具体的事 (人名、地点、物件、当时的情绪),少用"我们度过了美好的一天"这种空话。
 4. **篇幅**: 150~300 字之间的一段中文叙述,不要分段,不要列表,不要任何前缀和标题,直接出叙述。
 `;
-
             const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
@@ -557,38 +564,62 @@ ${charPart}
             });
             if (!response.ok) throw new Error(`主 API 失败 (${response.status})`);
             const data = await safeResponseJson(response);
-            let summary = (data.choices?.[0]?.message?.content || '').trim();
-            summary = summary.replace(/^["'「『]|["'」』]$/g, '').trim();
-            if (!summary) throw new Error('归档总结为空');
+            let s = (data.choices?.[0]?.message?.content || '').trim();
+            s = s.replace(/^["'「『]|["'」』]$/g, '').trim();
+            if (!s) throw new Error('归档总结为空');
+            return s;
+        };
 
-            // 2. 神经链接 (char.memories): 永远写入,日期对齐到日记当天
+        try {
+            // 1. 如果开了宫殿,先走副 API 一次提取,成败决定神经链接走哪条路径
+            let palaceResult: DiaryIngestResult | null = null;
+            if (selectedChar.memoryPalaceEnabled) {
+                try {
+                    palaceResult = await ingestDiaryToPalace(
+                        selectedChar,
+                        diary.date,
+                        diary.userPage.text,
+                        diary.charPage?.text || '',
+                        memoryPalaceConfig?.lightLLM as any,
+                        userProfile.name,
+                    );
+                } catch (e: any) {
+                    console.warn('🏰 [Journal] 入宫失败:', e);
+                    palaceResult = null;
+                }
+            } else {
+                palaceResult = { status: 'palace_disabled' };
+            }
+
+            // 2. 决定神经链接那条的 summary / mood
+            //    宫殿成功 (status==='done' 且 nodes 非空) → bullets 化, mood='diary_palace'
+            //    其它一切情况 → 主 API 散文 fallback, mood='diary'
+            let summary: string;
+            let mood: string;
+            let summaryOrigin: 'palace_bullets' | 'prose_fallback';
+            if (palaceResult && palaceResult.status === 'done' && palaceResult.nodes.length > 0) {
+                summary = palaceResult.nodes
+                    .map(n => `- ${(n.content || '').replace(/\n/g, ' ').trim()}`)
+                    .filter(line => line.length > 2)
+                    .join('\n');
+                mood = 'diary_palace';
+                summaryOrigin = 'palace_bullets';
+            } else {
+                summary = await generateProseSummary();
+                mood = 'diary';
+                summaryOrigin = 'prose_fallback';
+            }
+
+            // 3. 神经链接 (char.memories): date 对齐到日记当天
             const newMem: MemoryFragment = {
                 id: `mem-diary-${Date.now()}`,
                 date: diary.date,
                 summary,
-                mood: 'diary',
+                mood,
             };
             updateCharacter(selectedChar.id, {
                 memories: [...(selectedChar.memories || []), newMem],
             });
-
-            // 3. 记忆宫殿 (开了才走): 用副 API 抽结构化节点 + 向量化,createdAt = 日记当天
-            //    无论开没开,都把 result 攒下来塞进弹窗;关了的话 result.status='palace_disabled'
-            //    用户也能看到"为什么没进宫殿"。
-            let palaceResult: DiaryIngestResult | null = null;
-            try {
-                palaceResult = await ingestDiaryToPalace(
-                    selectedChar,
-                    diary.date,
-                    diary.userPage.text,
-                    diary.charPage?.text || '',
-                    memoryPalaceConfig?.lightLLM as any,
-                    userProfile.name,
-                );
-            } catch (e: any) {
-                console.warn('🏰 [Journal] 入宫失败:', e);
-                palaceResult = null; // null 表示抛异常了, 弹窗里单独标"写入失败"
-            }
 
             // 4. 标记 isArchived 防止重复
             const updatedDiary: DiaryEntry = { ...diary, isArchived: true };
@@ -596,11 +627,12 @@ ${charPart}
             if (currentEntry?.id === diary.id) setCurrentEntry(updatedDiary);
             await loadDiaries(selectedChar.id);
 
-            // 5. 弹窗展示归档全貌: 总结 + 神经链接 + 宫殿状态/节点
+            // 5. 弹窗展示归档全貌
             setArchiveResult({
                 date: diary.date,
                 charName: selectedChar.name,
                 summary,
+                summaryOrigin,
                 palace: palaceResult,
             });
         } catch (e: any) {
@@ -715,7 +747,8 @@ ${charPart}
                 <div className="rounded-2xl bg-amber-50 border border-amber-100 px-4 py-3 space-y-2">
                     <p><span className="font-bold text-amber-700">① 自动同步聊天:</span> 角色回复了你的日记之后,会自动变成一张漂亮卡片出现在和这个角色的聊天里 —— 不用再手动发送。你之后在日记本里改文字 / 删日记,聊天里那张卡片也会跟着同步。</p>
                     <p><span className="font-bold text-amber-700">② 单向日记不进上下文:</span> 如果你只是单方面写给角色看(没让 ta 回复),这一篇就不会进入任何记忆,按以前的方式存着就好。</p>
-                    <p><span className="font-bold text-amber-700">③ 归档按钮搬家了:</span> 顶部的"归档"按钮没了,改成每条日记右边的小档案盒图标。点一下会把那篇日记总结进角色的<b>神经链接</b>;如果角色开了<b>记忆宫殿</b>,也会用宫殿的副 API 抽出结构化记忆塞进向量库(日期对齐到日记当天)。</p>
+                    <p><span className="font-bold text-amber-700">③ 新日记没有手动归档按钮:</span> 本次更新<b>之后</b>新写的日记走的就是上面"自动同步聊天"那条线 —— 卡片落到聊天里之后, chatapp 的日度归档 / 记忆宫殿管线会跟处理其它消息一样把它顺带处理掉,不需要也<b>不应该</b>再手动归档一次,否则会重复。<b>只有本次更新之前留下的老日记</b>,列表里才还能看到那个右边的档案盒按钮,给你最后一次手动归档老记录的机会。</p>
+                    <p><span className="font-bold text-amber-700">④ 老日记归档按钮的行为:</span> <b>没开记忆宫殿的角色</b> → 主 API 用升级 prompt 出一段散文式总结写进<b>神经链接</b>;<b>开了记忆宫殿的角色</b> → 走宫殿副 API 一次抽取多条结构化记忆,节点入向量库,<b>同一组节点 bullet 化也写进神经链接</b>(跟 chatapp 自动归档一致, 两边内容严格一一对应,日期对齐到日记当天)。</p>
                 </div>
                 <p className="text-xs text-slate-400">这条提示只出现一次。</p>
             </div>
@@ -729,22 +762,22 @@ ${charPart}
         // 宫殿状态文案
         let palaceStatus: { tone: 'on' | 'off' | 'warn' | 'fail'; title: string; detail: string } = { tone: 'off', title: '', detail: '' };
         if (!p) {
-            palaceStatus = { tone: 'fail', title: '记忆宫殿 · 写入失败', detail: '入宫过程抛出异常, 详情看控制台。神经链接那条总结仍然写入成功。' };
+            palaceStatus = { tone: 'fail', title: '记忆宫殿 · 写入失败', detail: '入宫过程抛出异常, 详情看控制台。神经链接已 fallback 走主 API 散文版写入成功。' };
         } else if (p.status === 'palace_disabled') {
-            palaceStatus = { tone: 'off', title: '记忆宫殿 · 未开启', detail: `${archiveResult.charName} 没开启记忆宫殿, 本次只进了神经链接。要让日记进向量记忆, 去角色设置打开"记忆宫殿"开关。` };
+            palaceStatus = { tone: 'off', title: '记忆宫殿 · 未开启', detail: `${archiveResult.charName} 没开启记忆宫殿, 走的主 API 散文路径写神经链接。要让日记进向量记忆, 去角色设置打开"记忆宫殿"开关再归档。` };
         } else if (p.status === 'lightllm_missing') {
-            palaceStatus = { tone: 'warn', title: '记忆宫殿 · 副 API 未配置', detail: '记忆宫殿已开, 但宫殿副 API (memoryPalaceConfig.lightLLM) 没填; 没法做结构化抽取, 本次只进了神经链接。' };
+            palaceStatus = { tone: 'warn', title: '记忆宫殿 · 副 API 未配置', detail: '宫殿已开, 但宫殿副 API (memoryPalaceConfig.lightLLM) 没填; 没法做结构化抽取, 神经链接已 fallback 走主 API 散文版。' };
         } else if (p.status === 'embedding_missing') {
-            palaceStatus = { tone: 'warn', title: '记忆宫殿 · 嵌入模型未配置', detail: '记忆宫殿已开, 但 embedding 配置缺失; 没法向量化, 本次只进了神经链接。' };
+            palaceStatus = { tone: 'warn', title: '记忆宫殿 · 嵌入模型未配置', detail: '宫殿已开, 但 embedding 配置缺失; 没法向量化, 神经链接已 fallback 走主 API 散文版。' };
         } else if (p.status === 'empty_input') {
             palaceStatus = { tone: 'warn', title: '记忆宫殿 · 内容为空', detail: '日记两页都没有正文, 没东西可入宫。' };
         } else if (p.status === 'extracted_none') {
-            palaceStatus = { tone: 'warn', title: '记忆宫殿 · 副 API 没提取出内容', detail: '副 API 读完日记但没认为有值得记的东西。神经链接的总结仍然写入成功。' };
+            palaceStatus = { tone: 'warn', title: '记忆宫殿 · 副 API 没提取出内容', detail: '副 API 读完日记但没认为有值得记的东西。神经链接已 fallback 走主 API 散文版写入。' };
         } else {
             palaceStatus = {
                 tone: 'on',
                 title: `记忆宫殿 · 入了 ${p.stored} 条${p.skipped > 0 ? ` (另有 ${p.skipped} 条命中已有记忆去重)` : ''}`,
-                detail: '副 API 把日记拆成多条结构化记忆并向量化, 后续聊天召回时按语义命中。createdAt 已对齐到日记当天。',
+                detail: '副 API 把日记拆成下面这几条结构化记忆并向量化, 同一组内容也 bullet 化进了上面的神经链接。后续聊天召回时按语义命中。createdAt 已对齐到日记当天。',
             };
         }
 
@@ -762,16 +795,34 @@ ${charPart}
                 }
             >
                 <div className="space-y-3 text-sm text-slate-700 leading-relaxed max-h-[60vh] overflow-y-auto no-scrollbar pr-1">
+                    {/* 顶部一行: 数据流向示意 */}
+                    {archiveResult.summaryOrigin === 'palace_bullets' ? (
+                        <div className="rounded-xl bg-gradient-to-r from-emerald-50 to-purple-50 border border-emerald-200/60 px-3 py-2 text-[11px] text-slate-600">
+                            ✓ 这次归档同时进了 <b className="text-emerald-700">神经链接</b> 和 <b className="text-purple-700">记忆宫殿</b>,
+                            两边拿的是 <b>同一组提取出来的内容</b> —— 副 API 抽出的 MemoryNode 直接 bullet 化写进神经链接, 跟 chatapp 的自动归档一致。
+                        </div>
+                    ) : (
+                        <div className="rounded-xl bg-emerald-50/70 border border-emerald-100 px-3 py-2 text-[11px] text-slate-600">
+                            这次归档只进了 <b className="text-emerald-700">神经链接</b>, 用主 API 生成的散文式总结。原因看下面"记忆宫殿"那块。
+                        </div>
+                    )}
+
                     {/* 神经链接 */}
                     <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 px-4 py-3 space-y-2">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                             <span className="text-[10px] font-bold tracking-widest uppercase text-emerald-700">● 神经链接 · char.memories</span>
                             <span className="text-[10px] text-emerald-600/70">写入 1 条 · 日期 {archiveResult.date}</span>
+                            <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">mood={archiveResult.summaryOrigin === 'palace_bullets' ? 'diary_palace' : 'diary'}</span>
                         </div>
-                        <p className="text-[13px] text-slate-700 leading-relaxed whitespace-pre-wrap" style={{ fontFamily: 'ui-serif, Georgia, serif' }}>
+                        <p className="text-[13px] text-slate-700 leading-relaxed whitespace-pre-wrap" style={{ fontFamily: archiveResult.summaryOrigin === 'palace_bullets' ? 'inherit' : 'ui-serif, Georgia, serif' }}>
                             {archiveResult.summary}
                         </p>
-                        <p className="text-[10px] text-emerald-700/70">↑ 这段总结会出现在「{archiveResult.charName}」的本月详细记录里, 自动跟聊天上下文一起送进 LLM。</p>
+                        <p className="text-[10px] text-emerald-700/70">
+                            ↑ 这条会出现在「{archiveResult.charName}」的本月详细记录里, 自动跟聊天上下文一起送进 LLM。
+                            {archiveResult.summaryOrigin === 'palace_bullets'
+                                ? ' 每个 bullet 都对应下面记忆宫殿里的一个节点。'
+                                : ''}
+                        </p>
                     </div>
 
                     {/* 记忆宫殿 */}
@@ -888,30 +939,33 @@ ${charPart}
                                         </div>
                                     </div>
                                 </div>
-                                {/* 归档按钮:已归档→显示状态,未归档→点击归档(支持单方面写的日记) */}
-                                <button
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        if (d.isArchived || archivingId) return;
-                                        handleArchiveDiary(d);
-                                    }}
-                                    disabled={d.isArchived || archivingId === d.id}
-                                    className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${
-                                        d.isArchived
-                                            ? 'text-amber-500 bg-amber-50 cursor-default'
-                                            : archivingId === d.id
-                                                ? 'text-amber-500 bg-amber-50 cursor-wait'
-                                                : 'text-slate-400 hover:text-amber-600 hover:bg-amber-50'
-                                    }`}
-                                    title={d.isArchived ? '已归档进神经链接' : (archivingId === d.id ? '归档中...' : '归档进神经链接' + (selectedChar.memoryPalaceEnabled ? ' / 记忆宫殿' : ''))}
-                                    aria-label="归档日记"
-                                >
-                                    {archivingId === d.id ? (
-                                        <div className="w-3.5 h-3.5 border-2 border-amber-200 border-t-amber-500 rounded-full animate-spin"></div>
-                                    ) : (
-                                        <Archive size={16} weight={d.isArchived ? 'fill' : 'regular'} />
-                                    )}
-                                </button>
+                                {/* 归档按钮: 只对老日记 (autoSync 未设) 显示, 防止用户对新日记乱点重复归档.
+                                    新日记 (本次更新后写的) 走自动同步聊天那条线, 不需要也不应该手动归档. */}
+                                {!d.autoSync && (
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            if (d.isArchived || archivingId) return;
+                                            handleArchiveDiary(d);
+                                        }}
+                                        disabled={d.isArchived || archivingId === d.id}
+                                        className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${
+                                            d.isArchived
+                                                ? 'text-amber-500 bg-amber-50 cursor-default'
+                                                : archivingId === d.id
+                                                    ? 'text-amber-500 bg-amber-50 cursor-wait'
+                                                    : 'text-slate-400 hover:text-amber-600 hover:bg-amber-50'
+                                        }`}
+                                        title={d.isArchived ? '已归档进神经链接' : (archivingId === d.id ? '归档中...' : '归档进神经链接' + (selectedChar.memoryPalaceEnabled ? ' / 记忆宫殿' : ''))}
+                                        aria-label="归档日记"
+                                    >
+                                        {archivingId === d.id ? (
+                                            <div className="w-3.5 h-3.5 border-2 border-amber-200 border-t-amber-500 rounded-full animate-spin"></div>
+                                        ) : (
+                                            <Archive size={16} weight={d.isArchived ? 'fill' : 'regular'} />
+                                        )}
+                                    </button>
+                                )}
                                 <button
                                     onClick={(e) => {
                                         e.stopPropagation();

@@ -1226,6 +1226,9 @@ export interface DiaryEntry {
     isArchived: boolean;
     /** 角色回复了的日记自动发到聊天后, 记录那条 score_card 消息的 id, 用于后续 edit/delete 同步 */
     chatCardMessageId?: number;
+    /** 标记这条日记是"自动同步聊天"时代产生的 (本次更新后新建的). 老日记 (字段未设)
+     *  才会在列表里看到手动归档按钮. 防止用户对已经在自动同步上的新日记再点归档造成重复. */
+    autoSync?: boolean;
 }
 
 // ─── HANDBOOK / 手账 (跨角色聚合·零负担留痕本) ───
