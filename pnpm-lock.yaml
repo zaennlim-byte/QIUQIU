@@ -4,6 +4,12 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  '@rei-standard/amsg-client': link:../ReiStandard/packages/rei-standard-amsg/client
+  '@rei-standard/amsg-instant': link:../ReiStandard/packages/rei-standard-amsg/instant
+  '@rei-standard/amsg-shared': link:../ReiStandard/packages/rei-standard-amsg/shared
+  '@rei-standard/amsg-sw': link:../ReiStandard/packages/rei-standard-amsg/sw
+
 importers:
 
   .:
@@ -45,20 +51,20 @@ importers:
         specifier: ^2.1.10
         version: 2.1.10(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@rei-standard/amsg-client':
-        specifier: 2.3.0
-        version: 2.3.0
+        specifier: link:../ReiStandard/packages/rei-standard-amsg/client
+        version: link:../ReiStandard/packages/rei-standard-amsg/client
       '@rei-standard/amsg-instant':
-        specifier: 0.8.2
-        version: 0.8.2
+        specifier: link:../ReiStandard/packages/rei-standard-amsg/instant
+        version: link:../ReiStandard/packages/rei-standard-amsg/instant
       '@rei-standard/amsg-server':
         specifier: 2.4.1
         version: 2.4.1(@neondatabase/serverless@1.1.0)(pg@8.21.0)
       '@rei-standard/amsg-shared':
-        specifier: 0.1.0
-        version: 0.1.0
+        specifier: link:../ReiStandard/packages/rei-standard-amsg/shared
+        version: link:../ReiStandard/packages/rei-standard-amsg/shared
       '@rei-standard/amsg-sw':
-        specifier: 2.1.1
-        version: 2.1.1
+        specifier: link:../ReiStandard/packages/rei-standard-amsg/sw
+        version: link:../ReiStandard/packages/rei-standard-amsg/sw
       jszip:
         specifier: ^3.10.1
         version: 3.10.1
@@ -106,14 +112,14 @@ importers:
   worker/instant-push:
     dependencies:
       '@rei-standard/amsg-instant':
-        specifier: 0.8.2
-        version: 0.8.2
+        specifier: link:../../../ReiStandard/packages/rei-standard-amsg/instant
+        version: link:../../../ReiStandard/packages/rei-standard-amsg/instant
       '@rei-standard/amsg-shared':
-        specifier: 0.1.0
-        version: 0.1.0
+        specifier: link:../../../ReiStandard/packages/rei-standard-amsg/shared
+        version: link:../../../ReiStandard/packages/rei-standard-amsg/shared
       '@rei-standard/amsg-sw':
-        specifier: 2.1.1
-        version: 2.1.1
+        specifier: link:../../../ReiStandard/packages/rei-standard-amsg/sw
+        version: link:../../../ReiStandard/packages/rei-standard-amsg/sw
     devDependencies:
       wrangler:
         specifier: ^3.78.0
@@ -851,14 +857,6 @@ packages:
       react: '>= 16.8'
       react-dom: '>= 16.8'
 
-  '@rei-standard/amsg-client@2.3.0':
-    resolution: {integrity: sha512-P8tI4Fh31OFaE5CjLKtsUZYYVWWznUA7q0akl+LRrF6xE/xj4XzNE5woA2C4ELVnlsOzKxxxnwe1RYEF5mvO/Q==}
-    engines: {node: '>=20'}
-
-  '@rei-standard/amsg-instant@0.8.2':
-    resolution: {integrity: sha512-3lnzaqhg25IIBKGLCO+q8J079KOaQm/cMgzez4Y9/WyOGUZllr+B/U54oqLV6iPa4uRCisy0mFOP/RgZqNi9EQ==}
-    engines: {node: '>=18'}
-
   '@rei-standard/amsg-server@2.4.1':
     resolution: {integrity: sha512-REa1Wwpew8yzefV76ng+9clbmKeq/kB7BEULJjzRu07LE0yk7ITKKeleJPBIFYGpyuOihfsFdQmVXolRISzVkw==}
     engines: {node: '>=20'}
@@ -870,14 +868,6 @@ packages:
         optional: true
       pg:
         optional: true
-
-  '@rei-standard/amsg-shared@0.1.0':
-    resolution: {integrity: sha512-HyA60hLHFQTo3AY2ay0JjF2EHjimk2oToNhhuOmRRWZwk4Pu7EF3lcTa0O9b69KY4oOKdPq2qKeY7zL/RMR5lg==}
-    engines: {node: '>=20'}
-
-  '@rei-standard/amsg-sw@2.1.1':
-    resolution: {integrity: sha512-6bqXtNqLxJj2yO4a5+ViI+vo+s0dl0u5B2AMpdhuP8g8EFNZQmwt5Bz0X6vvfN00HhE08yQgqaYas307C1pvaw==}
-    engines: {node: '>=20'}
 
   '@rolldown/pluginutils@1.0.0-beta.27':
     resolution: {integrity: sha512-+d0F4MKMCbeVUJwG96uQ4SgAznZNSq93I3V+9NHA4OpvqG8mRCpGdKmK8l/dl02h2CCDHwW2FqilnTyDcAnqjA==}
@@ -2732,30 +2722,16 @@ snapshots:
       react: 18.3.1
       react-dom: 18.3.1(react@18.3.1)
 
-  '@rei-standard/amsg-client@2.3.0':
-    dependencies:
-      '@rei-standard/amsg-shared': 0.1.0
-
-  '@rei-standard/amsg-instant@0.8.2':
-    dependencies:
-      '@rei-standard/amsg-shared': 0.1.0
-
   '@rei-standard/amsg-server@2.4.1(@neondatabase/serverless@1.1.0)(pg@8.21.0)':
     dependencies:
       '@netlify/blobs': 8.2.0
-      '@rei-standard/amsg-shared': 0.1.0
+      '@rei-standard/amsg-shared': link:../ReiStandard/packages/rei-standard-amsg/shared
       web-push: 3.6.7
     optionalDependencies:
       '@neondatabase/serverless': 1.1.0
       pg: 8.21.0
     transitivePeerDependencies:
       - supports-color
-
-  '@rei-standard/amsg-shared@0.1.0': {}
-
-  '@rei-standard/amsg-sw@2.1.1':
-    dependencies:
-      '@rei-standard/amsg-shared': 0.1.0
 
   '@rolldown/pluginutils@1.0.0-beta.27': {}
 
