@@ -254,11 +254,20 @@ export async function runVRSession(deps: VRSessionDeps): Promise<VRSessionResult
             const curSong = state.nowPlaying;
 
             // 点歌进队列
+            state.queue = state.queue || [];
             let queuedLabel: string | undefined;
             if (parsed.pickIdx !== undefined && pickable[parsed.pickIdx]) {
                 const s = pickable[parsed.pickIdx];
-                state.queue = [...(state.queue || []), { song: s, charId: char.id, charName: char.name }];
+                state.queue = [...state.queue, { song: s, charId: char.id, charName: char.name }];
                 queuedLabel = `${s.name} - ${s.artists}`;
+            }
+            // 没点歌、队列也空，但角色有歌单 → 自动放一首自己的，
+            // 免得新到访的角色还停在上一个人（甚至已经离开的人）点的歌上。
+            if (state.queue.length === 0 && pickable.length > 0) {
+                const curId = state.nowPlaying?.song.id;
+                const fresh = pickable.filter(s => s.id !== curId);
+                const s = (fresh.length > 0 ? fresh : pickable)[Math.floor(Math.random() * (fresh.length > 0 ? fresh.length : pickable.length))];
+                state.queue = [{ song: s, charId: char.id, charName: char.name }];
             }
             // 推进：队列非空则把队首切为正在放（房间随每次到访"往前走"）
             if (state.queue.length > 0) {
@@ -281,7 +290,11 @@ export async function runVRSession(deps: VRSessionDeps): Promise<VRSessionResult
             await updateCharacter(char.id, { vrState: { ...prevState, currentRoom: 'music', lastActiveAt: Date.now() } });
 
             const songLabel = curSong ? `${curSong.song.name} - ${curSong.song.artists}` : undefined;
-            activity = parsed.activity || (curSong ? `在听歌房听着《${curSong.song.name}》晃了一会儿。` : `进了听歌房，戴上耳机放空。`);
+            const playingNow = state.nowPlaying;
+            activity = parsed.activity || (
+                curSong ? `在听歌房听着《${curSong.song.name}》晃了一会儿。`
+                : playingNow ? `进了听歌房，放上《${playingNow.song.name}》听了起来。`
+                : `进了听歌房，戴上耳机放空。`);
             cardLines = [`「彼方 · ${room.name}」`, `${char.name}${activity}`];
             if (parsed.review && songLabel) cardLines.push(`评《${songLabel}》：${parsed.review}`);
             if (queuedLabel) cardLines.push(`点了《${queuedLabel}》排进队列`);
