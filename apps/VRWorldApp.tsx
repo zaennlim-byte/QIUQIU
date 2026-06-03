@@ -58,7 +58,28 @@ const VRWorldApp: React.FC = () => {
     const [tab, setTab] = useState<Tab>('world');
     const [novels, setNovels] = useState<VRWorldNovel[]>([]);
     const [feed, setFeed] = useState<FeedItem[]>([]);
+    const [poBadge, setPoBadge] = useState<{ toSend: number; toCollect: number }>({ toSend: 0, toCollect: 0 });
     const [loading, setLoading] = useState(true);
+
+    // 邮局徽标：本地待寄出/待发送 + 后端待收取的回信（best-effort 探测）
+    const refreshPoBadge = useCallback(async () => {
+        try {
+            const letters = await DB.getVRLetters();
+            const toSend = letters.filter(l =>
+                (l.box === 'outbox' && l.status === 'queued') ||
+                (l.box === 'inbox' && l.replyStatus === 'queued')
+            ).length;
+            let toCollect = 0;
+            const sentIds = new Set(letters.filter(l => l.box === 'outbox' && l.status === 'sent' && l.remoteId).map(l => l.remoteId!));
+            if (sentIds.size > 0) {
+                try {
+                    const replies = await PostOffice.fetchReplies();
+                    toCollect = new Set(replies.filter(r => sentIds.has(r.letter_id)).map(r => r.letter_id)).size;
+                } catch { /* 离线/未配置：忽略，只显示本地待办 */ }
+            }
+            setPoBadge({ toSend, toCollect });
+        } catch { /* ignore */ }
+    }, []);
 
     const [enterRoom, setEnterRoom] = useState<VRRoomId | null>(null);
     const [readerNovel, setReaderNovel] = useState<VRWorldNovel | null>(null);
@@ -89,12 +110,14 @@ const VRWorldApp: React.FC = () => {
         setLoading(false);
     }, [loadNovels, loadFeed]);
 
-    useEffect(() => { void reloadAll(); }, [reloadAll]);
+    useEffect(() => { void reloadAll(); void refreshPoBadge(); }, [reloadAll, refreshPoBadge]);
     useEffect(() => {
-        const handler = () => { void reloadAll(); };
+        const handler = () => { void reloadAll(); void refreshPoBadge(); };
         window.addEventListener('vr-session-done', handler);
         return () => window.removeEventListener('vr-session-done', handler);
-    }, [reloadAll]);
+    }, [reloadAll, refreshPoBadge]);
+    // 离开房间（可能在邮局操作过）后刷新徽标
+    useEffect(() => { if (enterRoom === null) void refreshPoBadge(); }, [enterRoom, refreshPoBadge]);
 
     // 最近一条动态（按角色）
     const latestByChar = useMemo(() => {
@@ -214,7 +237,7 @@ const VRWorldApp: React.FC = () => {
                 {loading ? (
                     <div className="text-center text-white/40 text-[13px] tracking-[0.2em] py-12" style={{ fontFamily: `'Noto Serif SC',serif` }}>载入彼方…</div>
                 ) : tab === 'world' ? (
-                    <WorldView occupantsByRoom={occupantsByRoom} feed={feed} novelCount={novels.length}
+                    <WorldView occupantsByRoom={occupantsByRoom} feed={feed} novelCount={novels.length} poBadge={poBadge}
                         onEnterRoom={setEnterRoom} onGoLibrary={() => setTab('library')} onJump={jumpToAnnotation} />
                 ) : tab === 'library' ? (
                     <LibraryView novels={novels} characters={characters} onOpen={setReaderNovel}
@@ -374,9 +397,10 @@ const Chibi: React.FC<{ char: CharacterProfile; bubble?: string; onTap?: () => v
 const WorldView: React.FC<{
     occupantsByRoom: Record<string, CharacterProfile[]>;
     feed: FeedItem[]; novelCount: number;
+    poBadge: { toSend: number; toCollect: number };
     onEnterRoom: (r: VRRoomId) => void; onGoLibrary: () => void;
     onJump: (novelId: string | undefined, segIdx: number) => void;
-}> = ({ occupantsByRoom, feed, novelCount, onEnterRoom, onGoLibrary, onJump }) => (
+}> = ({ occupantsByRoom, feed, novelCount, poBadge, onEnterRoom, onGoLibrary, onJump }) => (
     <div className="space-y-4">
         <div className="grid grid-cols-2 gap-3">
             {VR_ROOMS.map(room => {
@@ -394,6 +418,16 @@ const WorldView: React.FC<{
                             <span className="text-[12.5px] tracking-[0.14em] text-white drop-shadow" style={{ fontFamily: `'Noto Serif SC',serif`, fontWeight: 500 }}>{room.name}</span>
                             {!room.implemented && <span className="text-[7px] tracking-wider text-white/60 border border-white/25 rounded-full px-1.5 ml-0.5">待启</span>}
                         </div>
+                        {room.id === 'postoffice' && (poBadge.toCollect > 0 || poBadge.toSend > 0) && (
+                            <div className="absolute top-2 right-2 flex flex-col items-end gap-1">
+                                {poBadge.toCollect > 0 && (
+                                    <span className="text-[8.5px] font-bold text-black rounded-full px-1.5 py-0.5 leading-none animate-pulse" style={{ background: 'linear-gradient(120deg,#ffd98a,#f5b94f)', boxShadow: '0 1px 6px rgba(245,185,79,.6)' }}>{poBadge.toCollect} 封回信</span>
+                                )}
+                                {poBadge.toSend > 0 && (
+                                    <span className="text-[8.5px] font-bold text-white/90 rounded-full px-1.5 py-0.5 leading-none" style={{ background: 'rgba(0,0,0,.45)', border: '1px solid rgba(255,255,255,.25)' }}>{poBadge.toSend} 待寄</span>
+                                )}
+                            </div>
+                        )}
                         {/* 角色小头像缩影 */}
                         <div className="absolute bottom-2 left-2.5 right-2.5 flex items-end justify-between">
                             <div className="flex -space-x-2">
@@ -456,6 +490,11 @@ const WorldView: React.FC<{
                                             ))}
                                         </div>
                                     ) : null}
+                                    {item.meta.room === 'postoffice' && item.meta.letterExcerpt && (
+                                        <div className="mt-1 text-[10.5px] text-amber-100/75 pl-2 border-l-2 border-amber-300/45 leading-snug" style={{ fontStyle: 'italic' }}>
+                                            「{item.meta.letterExcerpt.length > 70 ? item.meta.letterExcerpt.slice(0, 70) + '…' : item.meta.letterExcerpt}」
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         );
