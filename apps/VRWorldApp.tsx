@@ -128,6 +128,16 @@ const VRWorldApp: React.FC = () => {
     // 启用流程：设定 chibi 后回调启用
     const [pendingEnable, setPendingEnable] = useState<string | null>(null);
 
+    // 初次进入彼方：自动弹出玩法说明（看过一次后不再自动弹）
+    useEffect(() => {
+        try {
+            if (!localStorage.getItem('vr_help_seen')) {
+                setShowHelp(true);
+                localStorage.setItem('vr_help_seen', '1');
+            }
+        } catch { /* ignore */ }
+    }, []);
+
     const loadNovels = useCallback(async () => setNovels(await DB.getVRNovels()), []);
     const loadFeed = useCallback(async () => {
         const items: FeedItem[] = [];
@@ -714,6 +724,11 @@ const HelpModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                 <p className="text-[12px] text-white/75 leading-relaxed mb-3">
                     「彼方」是你的角色们<b className="text-indigo-200">自己会去逛</b>的一方小世界。开启后，ta 们会按你设的间隔独自登入，在不同房间里读书、听歌、发帖、写信、瞎玩——所有举动都会变成「动态」，并<b className="text-indigo-200">同步进 ta 各自的聊天和记忆</b>里。这是 ta 不被你盯着的私人时间。
                 </p>
+
+                <Block title="世界观会自适应你的角色" tone="rgba(180,200,255,.95)">
+                    <div>《彼方》本身是个<b className="text-indigo-200">类似 VRChat 的虚拟世界</b>。无论你的角色来自什么设定——现代、古代、魔法、末世、异世界都行——ta 都会用<b>符合自己世界观的方式</b>理解并进入这里，始终保持 ta 自己，不会因为来玩就 OOC。</div>
+                    <div className="mt-1 text-white/60"><b className="text-amber-200">别担心「我家角色世界观对不上就不能玩」</b>：怎么进来、用什么道理解释自己身处其中，全交给角色自己圆。放心带 ta 来逛。</div>
+                </Block>
 
                 <Block title="怎么开始" tone="rgba(245,208,138,.95)">
                     <Step n={1}>去 <b>「接入」</b> 标签：给角色捏个小人形象，打开开关，设个登入间隔。</Step>
