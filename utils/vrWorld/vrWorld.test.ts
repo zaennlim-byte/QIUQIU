@@ -36,19 +36,22 @@ describe('parsePostOfficeOutput', () => {
 });
 
 describe('parseGuestbookOutput', () => {
-    it('parses posts (with reply) + activity, caps at 2', () => {
+    it('parses posts (with reply) + activity, caps at 4', () => {
         const raw = [
             '<彼方>',
             '<留言 回复="#a1b2">同意楼上</留言>',
             '<留言>顺便问个问题</留言>',
-            '<留言>第三条应被忽略</留言>',
+            '<留言>再补一条</留言>',
+            '<留言>第四条</留言>',
+            '<留言>第五条应被忽略</留言>',
             '<动态>在留言簿接了句嘴</动态>',
             '</彼方>',
         ].join('\n');
         const out = parseGuestbookOutput(raw);
-        expect(out.posts).toHaveLength(2);
+        expect(out.posts).toHaveLength(4);
         expect(out.posts[0].replyLabel).toBe('a1b2');
         expect(out.posts[1].replyLabel).toBeUndefined();
+        expect(out.posts.map(p => p.content)).toEqual(['同意楼上', '顺便问个问题', '再补一条', '第四条']);
         expect(out.activity).toContain('接了句嘴');
     });
 });

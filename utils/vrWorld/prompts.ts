@@ -67,7 +67,7 @@ function roomStanceLines(roomId: string, charName: string): string[] {
             `· 吃瓜八卦、分享你最近在意的事、对某条热点发表看法；`,
             `· 聊你的专业 / 爱好 / 人生 / 理想，或者纯粹叽里呱啦发癫；`,
             `· 如果你心里认识在场或墙上的某个玩家，可以专门冲 ta 聊。`,
-            `想到啥发啥，有你自己的味道就行，别端着。`,
+            `想到啥发啥，有你自己的味道就行，别端着。版聊讲究短句连发——一句句蹦，别把一整段堆成一条。`,
         ];
     }
     if (roomId === 'gym') {
@@ -297,15 +297,15 @@ const gbLabel = (m: VRGuestbookMessage) => `#${m.id.slice(-4)}`;
 export const GUESTBOOK_OUTPUT_FORMAT = [
     `【输出格式】`,
     `<彼方>`,
-    `<留言 回复="可选#编号">你要发到留言墙上的话（一条版聊发言：抛话题/接话/吃瓜/聊爱好人生/对热点开麦…按你的人设）</留言>`,
-    `<留言>……想多发一条就再写一条，最多 2 条……</留言>`,
+    `<留言 回复="可选#编号">一条版聊发言（抛话题/接话/吃瓜/聊爱好人生/对热点开麦…按你的人设）</留言>`,
+    `<留言>下一条短消息……</留言>`,
     `<动态>一句第三人称活动播报，点明你在留言簿干了啥。例：在留言簿回了某人一句嘴 / 抛了个暴论钓鱼。</动态>`,
     `</彼方>`,
     ``,
     `规则：`,
-    `- 至少发 1 条 <留言>；想接某条已有留言就用 回应="#编号" 指向它。`,
-    `- "编号"必须是下面留言墙上真实出现的 #编号。`,
-    `- 这是公共版聊，别只会复读，发点有你味道、有信息量或有乐子的东西。`,
+    `- 这是版聊：真人发帖是一句句蹦的，别把一大段话堆成一条。把你想说的拆成 2~4 条短 <留言> 连发（每条短一点、口语化，像连着发的几条消息）；除非确实只有一句话要说。`,
+    `- 想接某条已有留言，就在那条 <留言> 上加 回复="#编号"（编号必须是下面留言墙上真实出现的 #编号）。`,
+    `- 别只会复读，发点有你味道、有信息量或有乐子的东西。`,
 ].join('\n');
 
 export function buildGuestbookRoomTurn(
@@ -355,7 +355,7 @@ export function parseGuestbookOutput(raw: string): ParsedGuestbookOutput {
         if (!content) continue;
         const refMatch = m[1].match(/回复\s*[^0-9A-Za-z]{0,4}([0-9A-Za-z]{2,8})/);
         posts.push({ content, replyLabel: refMatch ? refMatch[1] : undefined });
-        if (posts.length >= 2) break;
+        if (posts.length >= 4) break; // 版聊：允许一次连发最多 4 条短消息
     }
     const act = raw.match(/<动态>([\s\S]*?)<\/动态>/);
     return { posts, activity: act ? act[1].trim() : '' };
