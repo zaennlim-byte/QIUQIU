@@ -750,7 +750,7 @@ ${xhsEnabled ? `${[notionEnabled, feishuEnabled, notionNotesEnabled].filter(Bool
                     const quoted = rawQuote.length > 60 ? rawQuote.slice(0, 60) + '…' : rawQuote;
                     // name 记的是被引用消息的说话人：char.name = 用户在回复 char 本人之前的话；'我' = 用户引用自己。
                     const whose = m.replyTo.name === char.name ? '你之前说的' : `${m.replyTo.name || '对方'}说的`;
-                    content = `[用户引用了${whose}「${quoted}」，并针对这句话回复 ↓]\n${content}`;
+                    content = `[用户引用了${whose}「${quoted}」，并回复了 ↓]\n${content}`;
                 }
                 
                 if (m.type === 'image') {
