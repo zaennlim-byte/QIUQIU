@@ -18,9 +18,16 @@ import { safeResponseJson } from '../utils/safeApi';
 
 const genLocalId = (p: string) => `${p}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
 
-// 顶部安全区避让：全屏浮层（fixed inset-0）会越过外壳的 safe-area padding 直达屏幕顶端，
-// 需自行避开刘海 + 状态栏（系统时间/电量条约 2rem 高），否则退出键会和 iOS 顶部打架。
-const VR_OVERLAY_TOP = 'calc(env(safe-area-inset-top) + 2rem)';
+// 安全区单一来源：index.html :root 定义 --safe-top/--safe-bottom/--chrome-top，
+// 由 utils/iosStandalone.ts 喂入 JS 探测值（iOS 全屏 PWA 下原生 env 偶发返回 0 时兜底）。
+// 全屏浮层背景铺满屏幕，只用这些变量给顶/底「控件」让位。
+const VR_TOP = 'var(--chrome-top)';                            // 安全区 + SullyOS 状态栏：全屏面板顶栏统一用它
+const VR_SAFE_BOTTOM = 'var(--safe-bottom)';
+const VR_ROOM_PANEL_TOP = 'calc(var(--chrome-top) + 3.75rem)'; // 房间内浮层从顶栏下方开始
+// 底部额外留一点手势余量；iOS 全屏隐藏 home 条时也不让交互区贴着物理底边。
+const VR_BOTTOM_TOUCH_GAP = '0.75rem';
+// 底部内边距 / 贴底定位统一用它：base + 安全区 + 手势余量。
+const vrBottomPad = (base: string) => `calc(${base} + ${VR_SAFE_BOTTOM} + ${VR_BOTTOM_TOUCH_GAP})`;
 
 // ── 邮局寄信「日额度」：纯前端软计数，给后端减负（不追求精准，清数据会重置）──
 // 从首封开始计时的滚动窗口，窗口内封顶、过期自动归零。两个额度各自独立。
@@ -276,8 +283,9 @@ const VRWorldApp: React.FC = () => {
             <div className="pointer-events-none absolute inset-0"
                 style={{ backgroundImage: 'radial-gradient(1px 1px at 18% 28%, rgba(255,255,255,.7), transparent), radial-gradient(1px 1px at 68% 18%, rgba(200,215,255,.6), transparent), radial-gradient(1px 1px at 82% 58%, rgba(230,220,255,.5), transparent), radial-gradient(1px 1px at 38% 72%, rgba(210,225,255,.5), transparent), radial-gradient(1.5px 1.5px at 52% 42%, rgba(255,255,255,.55), transparent)', animation: 'vrtwinkle 7s ease-in-out infinite' }} />
 
-            {/* 顶栏 —— pt-8 让退出键避开顶部状态栏（时间/电量），不再打架 */}
-            <div className="relative flex items-center gap-2.5 px-5 pt-8 pb-2.5 shrink-0 z-10">
+            {/* 顶栏 —— 外壳不再统一加 safe-area padding，这里用 --chrome-top 让开
+                安全区 + SullyOS 状态栏（时间/电量），退出键落在其下方，不再怼到时钟上面。 */}
+            <div className="relative flex items-center gap-2.5 px-5 pb-2.5 shrink-0 z-10" style={{ paddingTop: VR_TOP }}>
                 <button onClick={closeApp} className="p-1.5 -ml-1.5 rounded-full text-white/65 active:bg-white/10"><ArrowLeft size={21} weight="regular" /></button>
                 <div className="flex items-center gap-2">
                     <Planet size={17} weight="light" className="text-indigo-100/90" style={{ filter: 'drop-shadow(0 0 7px rgba(165,185,255,.7))' }} />
@@ -548,7 +556,7 @@ const ActionSheet: React.FC<{
     if (!open) return null;
     return (
         <div className="fixed inset-0 z-[300] flex items-end justify-center bg-black/50 backdrop-blur-sm" onClick={onClose}>
-            <div className="w-full max-w-md p-3" onClick={e => e.stopPropagation()}>
+            <div className="w-full max-w-md p-3" style={{ paddingBottom: vrBottomPad('0.75rem') }} onClick={e => e.stopPropagation()}>
                 <div className="rounded-2xl overflow-hidden" style={{ background: 'linear-gradient(180deg,#1b1830,#120f22)', border: '1px solid rgba(255,255,255,.12)' }}>
                     {title && <div className="px-4 py-2.5 text-[11px] text-white/45 text-center border-b border-white/8 whitespace-pre-wrap leading-snug">{title}</div>}
                     {actions.map((a, i) => (
@@ -721,12 +729,12 @@ const HelpModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         </div>
     );
     return (
-        <div className="fixed inset-0 z-[80] flex flex-col" style={{ background: 'linear-gradient(180deg,#0c0a1c 0%,#080612 100%)', paddingTop: VR_OVERLAY_TOP }}>
-            <div className="flex items-center gap-2.5 px-5 pt-4 pb-3 shrink-0 border-b border-white/8">
+        <div className="fixed inset-0 z-[80] flex flex-col" style={{ background: 'linear-gradient(180deg,#0c0a1c 0%,#080612 100%)' }}>
+            <div className="flex items-center gap-2.5 px-5 pb-3 shrink-0 border-b border-white/8" style={{ paddingTop: VR_TOP }}>
                 <span className="text-[15px] tracking-[0.2em] text-white/95" style={{ fontFamily: `'Noto Serif SC',serif` }}>彼方 · 玩法说明</span>
                 <button onClick={onClose} className="ml-auto p-1.5 rounded-full text-white/60 active:bg-white/10"><X size={19} /></button>
             </div>
-            <div className="flex-1 overflow-y-auto vr-reader-scroll px-4 py-4">
+            <div className="flex-1 overflow-y-auto vr-reader-scroll px-4 pt-4" style={{ paddingBottom: vrBottomPad('1rem') }}>
                 <p className="text-[12px] text-white/75 leading-relaxed mb-3">
                     「彼方」是你的角色们<b className="text-indigo-200">自己会去逛</b>的一方小世界。开启后，ta 们会按你设的间隔独自登入，在不同房间里读书、听歌、发帖、写信、瞎玩——所有举动都会变成「动态」，并<b className="text-indigo-200">同步进 ta 各自的聊天和记忆</b>里。这是 ta 不被你盯着的私人时间。
                 </p>
@@ -1197,8 +1205,8 @@ const PostOfficePanel: React.FC<{ addToast?: (m: string, t?: any) => void; chara
     };
 
     return (
-        <div className="absolute top-14 left-3 right-3 bottom-3 z-20 rounded-2xl overflow-hidden flex flex-col backdrop-blur-md"
-            style={{ background: 'rgba(30,24,14,0.66)', border: '1px solid rgba(220,190,120,0.25)', boxShadow: '0 8px 26px rgba(0,0,0,.45)' }}>
+        <div className="absolute left-3 right-3 z-20 rounded-2xl overflow-hidden flex flex-col backdrop-blur-md"
+            style={{ top: VR_ROOM_PANEL_TOP, bottom: vrBottomPad('0.75rem'), background: 'rgba(30,24,14,0.66)', border: '1px solid rgba(220,190,120,0.25)', boxShadow: '0 8px 26px rgba(0,0,0,.45)' }}>
             {/* 动作行 */}
             <div className="flex items-center gap-1.5 px-3 py-2 border-b border-white/10 shrink-0">
                 <span className="text-[11px] tracking-[0.2em] text-amber-100/80 mr-auto" style={{ fontFamily: `'Noto Serif SC',serif` }}>邮局</span>
@@ -1480,7 +1488,7 @@ const RoomScene: React.FC<{
     }, []);
 
     return (
-        <div className="fixed inset-0 z-50 flex flex-col" style={{ paddingTop: VR_OVERLAY_TOP, background: '#05060d' }}>
+        <div className="fixed inset-0 z-50 flex flex-col" style={{ background: '#05060d' }}>
             <VRStyleTag />
             <div className="relative flex-1 overflow-hidden">
                 <RoomBackground roomId={roomId} />
@@ -1488,9 +1496,9 @@ const RoomScene: React.FC<{
                 <div className="pointer-events-none absolute inset-0" style={{ backgroundImage: 'radial-gradient(1px 1px at 22% 24%, rgba(255,255,255,.5), transparent), radial-gradient(1px 1px at 72% 16%, rgba(210,220,255,.45), transparent), radial-gradient(1px 1px at 60% 66%, rgba(230,225,255,.4), transparent)', animation: 'vrtwinkle 7s ease-in-out infinite' }} />
                 <div className="pointer-events-none absolute inset-0" style={{ background: 'radial-gradient(120% 90% at 50% 30%, transparent 55%, rgba(5,6,14,.45) 100%)' }} />
                 {/* 顶栏 */}
-                <div className="absolute top-0 left-0 right-0 flex items-center gap-2.5 px-4 pt-3.5 pb-3 z-20"
-                    style={{ background: 'linear-gradient(180deg,rgba(5,6,14,.55),transparent)' }}>
-                    <button onClick={onClose} className="p-1.5 -ml-1.5 rounded-full bg-white/10 backdrop-blur-md active:bg-white/20 text-white/90 border border-white/10"><CaretLeft size={19} weight="regular" /></button>
+                <div className="absolute top-0 left-0 right-0 flex items-center gap-2.5 px-4 pb-3 z-[120]"
+                    style={{ background: 'linear-gradient(180deg,rgba(5,6,14,.55),transparent)', paddingTop: VR_TOP }}>
+                    <button onClick={onClose} className="h-10 w-10 -ml-2 rounded-full bg-white/10 backdrop-blur-md active:bg-white/20 text-white/90 border border-white/10 flex items-center justify-center"><CaretLeft size={20} weight="regular" /></button>
                     <span className="text-[16px] text-white drop-shadow flex items-center gap-1.5 tracking-[0.14em]" style={{ fontFamily: `'Noto Serif SC',serif`, fontWeight: 500 }}>{room.name}</span>
                     <div className="ml-auto flex items-center gap-2">
                         {occupants.length > 0 && (
@@ -1505,7 +1513,7 @@ const RoomScene: React.FC<{
 
                 {/* 听歌房：正在放 + 队列面板 */}
                 {isMusic && (
-                    <div className="absolute top-12 left-3 right-3 z-20">
+                    <div className="absolute left-3 right-3 z-20" style={{ top: VR_ROOM_PANEL_TOP }}>
                         {np ? (
                             <div className="rounded-2xl p-2.5 flex items-center gap-3 backdrop-blur-md"
                                 style={{ background: 'rgba(20,8,40,0.6)', border: '1px solid rgba(255,123,213,0.35)', boxShadow: '0 6px 20px rgba(120,40,160,.4)' }}>
@@ -1549,8 +1557,8 @@ const RoomScene: React.FC<{
                         else groups.push([m]);
                     }
                     return (
-                        <div className="absolute top-14 left-3 right-3 bottom-16 z-20 rounded-2xl overflow-hidden flex flex-col backdrop-blur-md"
-                            style={{ background: 'rgba(10,22,38,0.62)', border: '1px solid rgba(140,200,255,0.22)', boxShadow: '0 8px 26px rgba(0,0,0,.4)' }}>
+                        <div className="absolute left-3 right-3 z-20 rounded-2xl overflow-hidden flex flex-col backdrop-blur-md"
+                            style={{ top: VR_ROOM_PANEL_TOP, bottom: vrBottomPad('4rem'), background: 'rgba(10,22,38,0.62)', border: '1px solid rgba(140,200,255,0.22)', boxShadow: '0 8px 26px rgba(0,0,0,.4)' }}>
                             <div className="px-3 py-2 text-[10px] tracking-[0.25em] text-sky-200/70 border-b border-white/10" style={{ fontFamily: `'Noto Serif SC',serif` }}>留言墙</div>
                             <div className="flex-1 overflow-y-auto vr-reader-scroll px-3 py-3 space-y-3">
                                 {groups.length === 0 ? (
@@ -1612,8 +1620,8 @@ const RoomScene: React.FC<{
 
                 {/* 留言簿：用户发言（广播给所有接入角色） */}
                 {isGuestbook && (
-                    <div className="absolute bottom-0 left-0 right-0 z-30 flex items-center gap-2 px-3 py-2.5"
-                        style={{ background: 'linear-gradient(0deg,rgba(5,12,22,.92),transparent)' }}>
+                    <div className="absolute left-0 right-0 z-30 flex items-center gap-2 px-3 py-2.5"
+                        style={{ bottom: vrBottomPad('0px'), background: 'linear-gradient(0deg,rgba(5,12,22,.92),transparent)' }}>
                         <input value={postText} onChange={e => setPostText(e.target.value)}
                             onKeyDown={e => { if (e.key === 'Enter') submitPost(); }}
                             placeholder={`以 ${userName} 的身份留句话…`}
@@ -1631,7 +1639,7 @@ const RoomScene: React.FC<{
             {/* 角色活动详情 —— 盖在 chibi 之上（zIndex 高于任何 chibi） */}
             {detail && (
                 <div className="absolute inset-0 flex items-end bg-black/45" style={{ zIndex: 200 }} onClick={() => setDetail(null)}>
-                    <div className="w-full rounded-t-2xl p-4 text-white" style={{ background: 'linear-gradient(180deg,#1a2236 0%,#0d1119 100%)' }} onClick={e => e.stopPropagation()}>
+                    <div className="w-full rounded-t-2xl p-4 text-white" style={{ background: 'linear-gradient(180deg,#1a2236 0%,#0d1119 100%)', paddingBottom: vrBottomPad('1rem') }} onClick={e => e.stopPropagation()}>
                         <div className="flex items-center gap-2 mb-2">
                             {detail.avatar ? <img src={detail.avatar} className="h-9 w-9 rounded-full object-cover" alt="" /> : <div className="h-9 w-9 rounded-full bg-indigo-400/40" />}
                             <span className="font-bold">{detail.name}</span>
@@ -1844,9 +1852,9 @@ const ReaderModal: React.FC<{ novel: VRWorldNovel; characters: CharacterProfile[
         : novel.segments.slice(winStart, winEnd);
 
     return (
-        <div className="fixed inset-0 z-50 flex flex-col" style={{ background: theme.bg, paddingTop: VR_OVERLAY_TOP }}>
+        <div className="fixed inset-0 z-50 flex flex-col" style={{ background: theme.bg }}>
             {/* 顶栏 */}
-            <div className="flex items-center gap-2 px-4 pt-3 pb-2 shrink-0" style={{ borderBottom: `1px solid ${theme.accent}22` }}>
+            <div className="flex items-center gap-2 px-4 pb-2 shrink-0" style={{ borderBottom: `1px solid ${theme.accent}22`, paddingTop: VR_TOP }}>
                 <button onClick={onClose} className="p-1.5 -ml-1.5 rounded-full active:bg-black/5" style={{ color: theme.text }}><X size={20} weight="bold" /></button>
                 <div className="min-w-0 flex-1">
                     <div className="text-[14px] font-bold truncate" style={{ color: theme.text }}>{novel.title}</div>
@@ -1919,13 +1927,13 @@ const ReaderModal: React.FC<{ novel: VRWorldNovel; characters: CharacterProfile[
 
             {/* 底栏 */}
             {mode === 'page' ? (
-                <div className="flex items-center justify-between px-5 py-2.5 shrink-0" style={{ background: theme.paper, borderTop: `1px solid ${theme.accent}22` }}>
+                <div className="flex items-center justify-between px-5 py-2.5 shrink-0" style={{ background: theme.paper, borderTop: `1px solid ${theme.accent}22`, paddingBottom: vrBottomPad('0.625rem') }}>
                     <button disabled={page === 0} onClick={() => setPage(p => Math.max(0, p - 1))} className="text-[12px] disabled:opacity-30 font-semibold" style={{ color: theme.accent }}>‹ 上一页</button>
                     <span className="text-[11px]" style={{ color: theme.sub }}>{page + 1} / {totalPages}</span>
                     <button disabled={page >= totalPages - 1} onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} className="text-[12px] disabled:opacity-30 font-semibold" style={{ color: theme.accent }}>下一页 ›</button>
                 </div>
             ) : (
-                <div className="flex items-center justify-center gap-4 px-5 py-2 shrink-0" style={{ background: theme.paper, borderTop: `1px solid ${theme.accent}22` }}>
+                <div className="flex items-center justify-center gap-4 px-5 py-2 shrink-0" style={{ background: theme.paper, borderTop: `1px solid ${theme.accent}22`, paddingBottom: vrBottomPad('0.5rem') }}>
                     <button onClick={() => { setWinStart(0); setWinEnd(Math.min(total, 30)); setTopSeg(0); if (scrollRef.current) scrollRef.current.scrollTop = 0; }}
                         className="text-[11px] font-semibold" style={{ color: theme.accent }}>↑ 从头</button>
                     <span className="text-[10px]" style={{ color: theme.sub }}>滚动阅读 · 自动记录位置</span>
@@ -2007,7 +2015,7 @@ const UploadModal: React.FC<{
 
     return (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={busy ? undefined : onClose}>
-            <div className="w-full max-w-md rounded-t-2xl p-4 max-h-[88vh] overflow-y-auto vr-reader-scroll" style={{ background: 'linear-gradient(180deg,#161c2e 0%,#0c1019 100%)' }} onClick={e => e.stopPropagation()}>
+            <div className="w-full max-w-md rounded-t-2xl p-4 max-h-[88vh] overflow-y-auto vr-reader-scroll" style={{ background: 'linear-gradient(180deg,#161c2e 0%,#0c1019 100%)', paddingBottom: vrBottomPad('1rem') }} onClick={e => e.stopPropagation()}>
                 <div className="flex items-center mb-3">
                     <span className="text-[15px] font-bold text-white">上传小说</span>
                     {!busy && <button onClick={onClose} className="ml-auto p-1 text-indigo-300/60"><X size={18} /></button>}
@@ -2097,8 +2105,8 @@ const ChibiEditor: React.FC<{
 
     if (creating) {
         return (
-            <div className="fixed inset-0 z-[60] flex flex-col bg-black" style={{ paddingTop: VR_OVERLAY_TOP }}>
-                <div className="flex items-center gap-2 px-4 py-2 shrink-0 text-white" style={{ background: 'linear-gradient(180deg,#161c2e 0%,#0c1019 100%)' }}>
+            <div className="fixed inset-0 z-[60] flex flex-col bg-black">
+                <div className="flex items-center gap-2 px-4 pb-2 shrink-0 text-white" style={{ background: 'linear-gradient(180deg,#161c2e 0%,#0c1019 100%)', paddingTop: VR_TOP }}>
                     <button onClick={() => existing?.img ? setCreating(false) : onClose()} className="p-1.5 -ml-1.5 rounded-full active:bg-white/10"><CaretLeft size={20} weight="bold" /></button>
                     <span className="text-[14px] font-bold">捏 {char.name} 的小人</span>
                 </div>
@@ -2114,7 +2122,7 @@ const ChibiEditor: React.FC<{
     return (
         <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/55" onClick={onClose}>
             <VRStyleTag />
-            <div className="w-full max-w-md rounded-t-2xl p-4" style={{ background: 'linear-gradient(180deg,#161c2e 0%,#0c1019 100%)' }} onClick={e => e.stopPropagation()}>
+            <div className="w-full max-w-md rounded-t-2xl p-4" style={{ background: 'linear-gradient(180deg,#161c2e 0%,#0c1019 100%)', paddingBottom: vrBottomPad('1rem') }} onClick={e => e.stopPropagation()}>
                 <div className="flex items-center mb-1">
                     <span className="text-[15px] font-bold text-white">{char.name} 的彼方形象</span>
                     <button onClick={onClose} className="ml-auto p-1 text-indigo-300/60"><X size={18} /></button>
