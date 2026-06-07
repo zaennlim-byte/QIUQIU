@@ -3400,7 +3400,9 @@ export const Like520Session: React.FC<SessionProps> = ({ charId, onClose }) => {
             {phase === 'char_creator' && (
                 // wrapper 顶让位刘海给 iframe 用，背景染成跟 iframe 内顶部同色，看不出色块；
                 // 底由 iframe 内 .panel 自己的 calc(12px + env(safe-area-inset-bottom)) 让位 home 条（viewport-fit=cover 已开）。
+                // 浮动 X 退出 —— iframe HTML 自身没有返回键，不给的话进了捏脸只能"出件"才能往下走。
                 <div className="absolute inset-0" style={{ paddingTop: 'var(--safe-top)', background: '#FFF1E6' }}>
+                    <ExitButton onClick={onClose} />
                     <CreatorIframe
                         mode="char"
                         charName={char.name}
@@ -3434,6 +3436,7 @@ export const Like520Session: React.FC<SessionProps> = ({ charId, onClose }) => {
 
             {phase === 'user_creator' && (
                 <div className="absolute inset-0" style={{ paddingTop: 'var(--safe-top)', background: '#FFF1E6' }}>
+                    <ExitButton onClick={onClose} />
                     <CreatorIframe
                         mode="user"
                         charName={char.name}
