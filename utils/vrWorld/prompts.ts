@@ -267,6 +267,29 @@ export interface ParsedVROutput {
     activity: string;
 }
 
+/**
+ * 模型偶尔会把 回应="#xxxx" / 段落="N" 这类标签属性又复读进正文开头，
+ * 导致 #cgis、回应="#cgis" 之类残渣泄漏到批注/留言正文里显示出来。
+ * 这里只剥正文「开头」、且只认「属性形态」（回应/回复/段落=… 或裸的 #xxxx），
+ * 避免误删正文里合法的引号、井号等内容。
+ */
+const LEAKED_ATTR_HEAD = new RegExp(
+    '^\\s*(?:' +
+        '(?:回应|回复|段落|段)\\s*[=:：]\\s*["\'“”‘’「『]?\\s*#?[0-9A-Za-z]{1,8}\\s*["\'“”‘’」』]?' + // 回应="#xxxx"
+        '|#[0-9A-Za-z]{2,8}' + // 裸的 #xxxx 引用标签
+    ')[\\s,，、:：]*'
+);
+
+export function stripLeakedAttrs(content: string): string {
+    let s = content.trim();
+    let prev: string;
+    do {
+        prev = s;
+        s = s.replace(LEAKED_ATTR_HEAD, '').trim();
+    } while (s !== prev && s.length > 0);
+    return s;
+}
+
 /** 解析角色输出的 <彼方>...</彼方> 块。 */
 export function parseVROutput(raw: string): ParsedVROutput {
     const annotations: ParsedVRAnnotation[] = [];
@@ -277,7 +300,7 @@ export function parseVROutput(raw: string): ParsedVROutput {
     let m: RegExpExecArray | null;
     while ((m = annPat.exec(raw)) !== null) {
         const attrs = m[1];
-        const content = m[2].trim();
+        const content = stripLeakedAttrs(m[2]);
         if (!content) continue;
         const segMatch = attrs.match(/段落?\s*[^\d]{0,4}(\d+)/);
         if (!segMatch) continue;
@@ -356,7 +379,7 @@ export function parseGuestbookOutput(raw: string): ParsedGuestbookOutput {
     const pat = /<留言([^>]*)>([\s\S]*?)<\/留言>/g;
     let m: RegExpExecArray | null;
     while ((m = pat.exec(raw)) !== null) {
-        const content = m[2].trim();
+        const content = stripLeakedAttrs(m[2]);
         if (!content) continue;
         const refMatch = m[1].match(/回复\s*[^0-9A-Za-z]{0,4}([0-9A-Za-z]{2,8})/);
         posts.push({ content, replyLabel: refMatch ? refMatch[1] : undefined });

@@ -276,4 +276,25 @@ describe('parseVROutput', () => {
         const out = parseVROutput(raw);
         expect(out.annotations).toHaveLength(5);
     });
+
+    it('strips leaked 回应/段落 attribute residue from content', () => {
+        // 模型把 #cgis 回应="#cgis" 复读进了正文开头（用户实测里的真实泄漏）
+        const raw = '<批注 段落="5" 回应="#cgis">#cgis 回应="#cgis" 莲干并蒂？这姿势虽缠人</批注><动态>读完</动态>';
+        const out = parseVROutput(raw);
+        expect(out.annotations).toHaveLength(1);
+        expect(out.annotations[0].refLabel).toBe('cgis');
+        expect(out.annotations[0].content).toBe('莲干并蒂？这姿势虽缠人');
+        expect(out.annotations[0].content).not.toContain('回应');
+        expect(out.annotations[0].content).not.toContain('#cgis');
+    });
+
+    it('strips a bare leaked #label prefix', () => {
+        const out = parseVROutput('<批注 段落="2">#vo2m 这一处写得真好</批注><动态>x</动态>');
+        expect(out.annotations[0].content).toBe('这一处写得真好');
+    });
+
+    it('does NOT strip legitimate content starting with a quote', () => {
+        const out = parseVROutput('<批注 段落="1">「凤骑龙」这名字太刻意了</批注><动态>x</动态>');
+        expect(out.annotations[0].content).toBe('「凤骑龙」这名字太刻意了');
+    });
 });

@@ -12,6 +12,7 @@ import { VRScheduler } from '../utils/vrWorld/scheduler';
 import { VR_ROOMS, getRoom, VR_DEFAULT_INTERVAL_MIN } from '../utils/vrWorld/constants';
 import { buildNovelAsync, groupAnnotationsBySeg, getBookmark } from '../utils/vrWorld/novel';
 import { decodeBytes } from '../utils/vrWorld/decodeText';
+import { stripLeakedAttrs } from '../utils/vrWorld/prompts';
 import { PostOffice, MAX_LETTER_CHARS, exportIdentity, importIdentity, getAdminToken, setAdminToken, type RemoteReply, type RemoteLetterStat, type RemoteAdminLetter } from '../utils/vrWorld/postOffice';
 import { getVRApi, setVRApi, getVRApiLog, clearVRApiLog, type VRApiCall } from '../utils/vrWorld/vrApi';
 import { safeResponseJson } from '../utils/safeApi';
@@ -993,14 +994,14 @@ const FeedCard: React.FC<{ item: FeedItem; onJump: (novelId: string | undefined,
                         {item.meta.annotationRefs.slice(0, 3).map((ref, i) => (
                             <button key={i} onClick={() => onJump(item.meta.novelId, ref.segIdx)}
                                 className="block w-full text-left text-[10.5px] text-indigo-200/80 pl-2 border-l-2 border-amber-300/50 leading-snug active:opacity-60 hover:text-amber-100">
-                                {ref.text} <span className="text-amber-300/60">↗原文</span>
+                                {stripLeakedAttrs(ref.text)} <span className="text-amber-300/60">↗原文</span>
                             </button>
                         ))}
                     </div>
                 ) : item.meta.annotationExcerpts && item.meta.annotationExcerpts.length > 0 ? (
                     <div className="mt-1 space-y-0.5">
                         {item.meta.annotationExcerpts.slice(0, 2).map((ex, i) => (
-                            <div key={i} className="text-[10.5px] text-indigo-200/70 pl-2 border-l-2 border-amber-300/40 leading-snug">{ex}</div>
+                            <div key={i} className="text-[10.5px] text-indigo-200/70 pl-2 border-l-2 border-amber-300/40 leading-snug">{stripLeakedAttrs(ex)}</div>
                         ))}
                     </div>
                 ) : null}
@@ -1694,11 +1695,11 @@ const RoomScene: React.FC<{
                                         ? m.annotationRefs.map((ref, i) => (
                                             <button key={i} onClick={() => { onJump(m.novelId, ref.segIdx); setDetail(null); }}
                                                 className="block w-full text-left mt-1.5 text-[11.5px] text-indigo-200/85 pl-2 border-l-2 border-amber-300/50 leading-snug active:opacity-60">
-                                                {ref.text} <span className="text-amber-300/70">↗原文</span>
+                                                {stripLeakedAttrs(ref.text)} <span className="text-amber-300/70">↗原文</span>
                                             </button>
                                         ))
                                         : m.annotationExcerpts?.map((ex, i) => (
-                                            <div key={i} className="mt-1.5 text-[11.5px] text-indigo-200/80 pl-2 border-l-2 border-amber-300/50 leading-snug">{ex}</div>
+                                            <div key={i} className="mt-1.5 text-[11.5px] text-indigo-200/80 pl-2 border-l-2 border-amber-300/50 leading-snug">{stripLeakedAttrs(ex)}</div>
                                         ))}
                                     <p className="text-[9px] text-indigo-300/50 mt-2">{new Date(latestByChar[detail.id].timestamp).toLocaleString('zh-CN')}</p>
                                 </>
@@ -1788,7 +1789,7 @@ const SegBlock: React.FC<{
             <div key={a.id} className="mt-2 ml-2 rounded-lg px-3 py-2" style={{ background: theme.annBg, borderLeft: `3px solid ${theme.accent}` }}>
                 <span className="font-bold" style={{ color: theme.accent, fontSize: fontSize - 3 }}>{nameOf(a.authorId) || a.authorName}</span>
                 {a.targetAnnotationId && <span style={{ color: theme.sub, fontSize: fontSize - 3 }}> 回应</span>}
-                <span style={{ color: theme.text, fontSize: fontSize - 3 }}>：{a.content}</span>
+                <span style={{ color: theme.text, fontSize: fontSize - 3 }}>：{stripLeakedAttrs(a.content)}</span>
             </div>
         ))}
     </div>
