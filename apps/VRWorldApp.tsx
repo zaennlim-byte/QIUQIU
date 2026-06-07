@@ -70,15 +70,7 @@ const stripSelfName = (text: string | undefined, name: string | undefined): stri
 import type { CharacterProfile, UserProfile, VRWorldNovel, VRNovelAnnotation, VRCardMeta, VRRoomId, VRMusicRoomState, CharPlaylistSong, VRGuestbookState, VRGuestbookMessage, VRGardenState, VRGardenPlant, VRLetter, ApiPreset, APIConfig } from '../types';
 
 // ============ chibi 形象解析（vrState.chibi → 立绘 → 头像） ============
-interface ChibiDisplay { img: string; scale: number; offsetY: number; flip: boolean; isFallback: boolean; }
-const getChibi = (char: CharacterProfile): ChibiDisplay => {
-    const c = char.vrState?.chibi;
-    if (c?.img) return { img: c.img, scale: c.scale ?? 1, offsetY: c.offsetY ?? 0, flip: !!c.flip, isFallback: false };
-    const sprites = (char.activeSkinSetId && char.dateSkinSets?.find(s => s.id === char.activeSkinSetId)?.sprites)
-        || char.sprites || {};
-    const fb = sprites['happy'] || sprites['normal'] || sprites['smile'] || char.avatar || '';
-    return { img: fb, scale: 1, offsetY: 0, flip: false, isFallback: true };
-};
+import { getChibi } from '../utils/vrWorld/chibi';
 
 type Tab = 'world' | 'library' | 'settings' | 'api';
 
