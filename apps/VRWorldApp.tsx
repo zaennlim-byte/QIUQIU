@@ -152,7 +152,12 @@ const VRWorldApp: React.FC = () => {
     const loadFeed = useCallback(async () => {
         const items: FeedItem[] = [];
         for (const c of characters) {
-            const msgs = await DB.getRecentMessagesByCharId(c.id, 40);
+            // includeProcessed=true：彼方动态必须无视记忆宫殿高水位线（mp_lastMsgId_<charId>）。
+            // 否则角色一聊天，记忆宫殿管线就把高水位推过这些 vr_card 的 id，
+            // getRecentMessagesByCharId 默认会把 id<=hwm 的消息全过滤掉，
+            // 动态流就会在"不知道什么时候"（后台向量化跑完时）突然清零——尽管消息其实还在 IndexedDB 里。
+            // 同时把窗口从 40 放大到 200，避免最近一条动态被大量普通聊天挤出取数窗口。
+            const msgs = await DB.getRecentMessagesByCharId(c.id, 200, true);
             for (const m of msgs) {
                 // 用户在留言簿的发言会广播进每个角色的 vr_card（供 LLM 上下文用），
                 // 但它不是"角色自己的动态"——不进动态流，也不当作 chibi 气泡。
