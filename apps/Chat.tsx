@@ -2019,6 +2019,11 @@ const Chat: React.FC = () => {
                     border-radius: 24px !important;
                     box-shadow: 0 4px 10px -5px rgba(150,100,55,0.32) !important;
                 }
+                /* 仅动森：聊天正文放大一点 */
+                .sully-bubble-ai .text-\\[15px\\], .sully-bubble-user .text-\\[15px\\] {
+                    font-size: 16.5px !important;
+                    line-height: 1.7 !important;
+                }
              `}</style>}
 
              {/* 记忆整理中 — 顶部浮动胶囊（不阻塞交互，轻量无 backdrop-filter） */}
