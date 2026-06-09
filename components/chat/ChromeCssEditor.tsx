@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { DB } from '../../utils/db';
 
 // 聊天「白框」自定义 CSS 编辑器（Appearance 全局默认 与 单角色定制 共用）。
 // 选择器钩子：.sully-chat-header 顶栏 / -back 返回 / -avatar 头像 / -name 名字 / -status 状态 /
@@ -221,11 +222,29 @@ const PRESETS: Preset[] = [
     },
 ];
 
-const loadCustom = (): Preset[] => {
-    try { const raw = localStorage.getItem(PRESET_STORE_KEY); const arr = raw ? JSON.parse(raw) : []; return Array.isArray(arr) ? arr : []; }
-    catch { return []; }
+// 自定义预设存 IndexedDB（STORE_ASSETS，随 app 备份/导出一起走）；旧 localStorage 自动一次性迁移过来。
+const PRESET_ASSET_KEY = 'chrome_css_presets';
+
+const loadCustom = async (): Promise<Preset[]> => {
+    try { const fromDb = await DB.getAssetRaw(PRESET_ASSET_KEY); if (Array.isArray(fromDb)) return fromDb; } catch { /* ignore */ }
+    // 迁移旧 localStorage → IndexedDB
+    try {
+        const raw = localStorage.getItem(PRESET_STORE_KEY);
+        const arr = raw ? JSON.parse(raw) : [];
+        if (Array.isArray(arr) && arr.length) { await DB.saveAssetRaw(PRESET_ASSET_KEY, arr); localStorage.removeItem(PRESET_STORE_KEY); return arr; }
+    } catch { /* ignore */ }
+    return [];
 };
-const persistCustom = (list: Preset[]) => { try { localStorage.setItem(PRESET_STORE_KEY, JSON.stringify(list)); } catch { /* ignore */ } };
+const persistCustom = async (list: Preset[]) => { try { await DB.saveAssetRaw(PRESET_ASSET_KEY, list); } catch { /* ignore */ } };
+
+// 导出码：SULLYCSS1: + base64(utf8(JSON))，方便整段复制分享/换机带走。
+const encodePresets = (list: Preset[]): string => 'SULLYCSS1:' + btoa(unescape(encodeURIComponent(JSON.stringify(list))));
+const decodePresets = (code: string): Preset[] => {
+    const body = code.trim().replace(/^SULLYCSS1:/, '');
+    const json = decodeURIComponent(escape(atob(body)));
+    const arr = JSON.parse(json);
+    return Array.isArray(arr) ? arr.filter((p: any) => p && typeof p.name === 'string' && typeof p.code === 'string') : [];
+};
 
 const copyText = async (text: string): Promise<boolean> => {
     try { await navigator.clipboard.writeText(text); return true; } catch { /* fall through */ }
@@ -239,7 +258,15 @@ const copyText = async (text: string): Promise<boolean> => {
 
 const ChromeCssEditor: React.FC<{ value: string; onChange: (css: string) => void }> = ({ value, onChange }) => {
     const [copied, setCopied] = useState(false);
-    const [custom, setCustom] = useState<Preset[]>(() => loadCustom());
+    const [custom, setCustom] = useState<Preset[]>([]);
+
+    useEffect(() => {
+        let alive = true;
+        loadCustom().then((list) => { if (alive) setCustom(list); });
+        return () => { alive = false; };
+    }, []);
+
+    const commitCustom = (next: Preset[]) => { setCustom(next); persistCustom(next); };
 
     const handleCopyPrompt = async () => {
         if (await copyText(AI_PROMPT)) { setCopied(true); window.setTimeout(() => setCopied(false), 1800); }
@@ -248,12 +275,27 @@ const ChromeCssEditor: React.FC<{ value: string; onChange: (css: string) => void
         if (!value.trim() || typeof window === 'undefined') return;
         const name = window.prompt('给这套白框预设起个名字（所有角色通用）：', '我的预设')?.trim();
         if (!name) return;
-        const next = [...custom.filter((p) => p.name !== name), { name, code: value }];
-        setCustom(next); persistCustom(next);
+        commitCustom([...custom.filter((p) => p.name !== name), { name, code: value }]);
     };
-    const handleDeletePreset = (name: string) => {
-        const next = custom.filter((p) => p.name !== name);
-        setCustom(next); persistCustom(next);
+    const handleDeletePreset = (name: string) => commitCustom(custom.filter((p) => p.name !== name));
+
+    const handleExport = async () => {
+        if (!custom.length) { window.alert('还没有「我的预设」可导出。'); return; }
+        const ok = await copyText(encodePresets(custom));
+        window.alert(ok ? `已复制 ${custom.length} 套预设的导出码到剪贴板，发给别人或换机粘贴导入即可。` : '复制失败，请重试。');
+    };
+    const handleImport = () => {
+        if (typeof window === 'undefined') return;
+        const code = window.prompt('粘贴预设导出码（SULLYCSS1:...）：', '')?.trim();
+        if (!code) return;
+        let incoming: Preset[] = [];
+        try { incoming = decodePresets(code); } catch { window.alert('导出码无法识别，请确认完整粘贴。'); return; }
+        if (!incoming.length) { window.alert('没解析到有效预设。'); return; }
+        // 同名覆盖，其余追加
+        const map = new Map(custom.map((p) => [p.name, p] as const));
+        incoming.forEach((p) => map.set(p.name, p));
+        commitCustom(Array.from(map.values()));
+        window.alert(`已导入 ${incoming.length} 套预设。`);
     };
 
     return (
@@ -282,12 +324,18 @@ const ChromeCssEditor: React.FC<{ value: string; onChange: (css: string) => void
             </div>
 
             {/* 我的预设（所有角色通用，存在本机） */}
-            <div className="mb-1.5 flex items-center justify-between">
-                <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">我的预设（全角色通用）</span>
-                <button onClick={handleSavePreset} disabled={!value.trim()}
-                    className={`rounded-lg px-2.5 py-1 text-[10px] font-bold transition-all active:scale-95 ${value.trim() ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' : 'bg-slate-100 text-slate-300'}`}>
-                    ＋ 保存当前为预设
-                </button>
+            <div className="mb-1.5 flex flex-wrap items-center justify-between gap-1.5">
+                <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">我的预设（全角色通用 · 存本机随备份走）</span>
+                <div className="flex items-center gap-1.5">
+                    <button onClick={handleImport}
+                        className="rounded-lg bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-500 transition-all hover:bg-slate-200 active:scale-95">导入</button>
+                    <button onClick={handleExport} disabled={!custom.length}
+                        className={`rounded-lg px-2 py-1 text-[10px] font-bold transition-all active:scale-95 ${custom.length ? 'bg-slate-100 text-slate-500 hover:bg-slate-200' : 'bg-slate-100 text-slate-300'}`}>导出</button>
+                    <button onClick={handleSavePreset} disabled={!value.trim()}
+                        className={`rounded-lg px-2.5 py-1 text-[10px] font-bold transition-all active:scale-95 ${value.trim() ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' : 'bg-slate-100 text-slate-300'}`}>
+                        ＋ 保存当前
+                    </button>
+                </div>
             </div>
             <div className="mb-3 flex flex-wrap gap-1.5">
                 {custom.length === 0 ? (

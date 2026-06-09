@@ -451,24 +451,25 @@ const PhoneShell: React.FC = () => {
   // 冷启动「世界入场」是否已结束。结束前由 BootSequence 接管整屏（同时取代旧的黑屏 spinner）。
   const [bootDone, setBootDone] = useState(false);
 
-  // 从根本上消除「每次进 App 都要加载」：桌面就绪后，空闲时按优先级在后台逐个预热各 App 的代码块。
-  // 等用户真正点开某 App，chunk 已在内存，React.lazy 几乎同步解析、过场层几乎不出现。
-  // 逐个、空闲触发（requestIdleCallback）+ 起步延迟，确保不与首屏交互抢主线程/带宽。
+  // 从根本上消除「每次进 App 都要加载」：数据一就绪就在后台按优先级逐个预热各 App 的代码块。
+  // 关键：不等开机动画（bootDone）结束就开始 —— 否则用户在开机那 ~2 秒内点开 Chat 时 chunk 还没热，
+  // 会现下载+解析 300KB+，首次进聊天卡好几秒。预热与开机动画并行（只下载/解析负载、不挂载、无副作用）。
+  // 逐个、空闲触发（requestIdleCallback），不与首屏交互抢主线程/带宽。
   useEffect(() => {
-    if (!bootDone || !isDataLoaded) return;
+    if (!isDataLoaded) return;
     let cancelled = false;
     let idx = 0;
     const ric: (cb: () => void) => number = (window as any).requestIdleCallback
-      ? (cb) => (window as any).requestIdleCallback(cb, { timeout: 2000 })
-      : (cb) => window.setTimeout(cb, 300);
+      ? (cb) => (window as any).requestIdleCallback(cb, { timeout: 1500 })
+      : (cb) => window.setTimeout(cb, 200);
     const step = () => {
       if (cancelled || idx >= APP_PRELOAD_ORDER.length) return;
       warmLazy(APP_PRELOAD_ORDER[idx++]); // 下载 chunk + 解析 React.lazy 负载 → 首次打开不再 suspend、无底色闪烁
       if (!cancelled) ric(step);
     };
-    const startId = window.setTimeout(() => ric(step), 300); // 让首屏交互先稳定一拍
+    const startId = window.setTimeout(() => ric(step), 150); // 让首帧先绘制一拍，随即开始（含开机动画期间）
     return () => { cancelled = true; window.clearTimeout(startId); };
-  }, [bootDone, isDataLoaded]);
+  }, [isDataLoaded]);
 
   // Disclaimer popup for first-time users
   const [showDisclaimer, setShowDisclaimer] = useState(() => {
