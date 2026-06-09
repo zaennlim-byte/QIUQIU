@@ -1627,11 +1627,33 @@ const MessageItem = React.memo(({
                     style={{ height: 200 }}
                     onLoad={(e) => {
                         try {
-                            const f = e.currentTarget;
+                            const f = e.currentTarget as HTMLIFrameElement & { __htmlCardRO?: ResizeObserver };
                             const doc = f.contentDocument;
                             if (!doc || !doc.body) return;
-                            const h = Math.min(800, Math.max(60, doc.body.scrollHeight + 4));
-                            f.style.height = h + 'px';
+                            // 量内容真实高度并把 iframe 调成等高，避免内部滚动。
+                            // 上限放宽到 2400，足够长卡片完整展开；真正超长的才会兜底滚动。
+                            const fit = () => {
+                                try {
+                                    const root = doc.documentElement;
+                                    const body = doc.body;
+                                    const natural = Math.max(
+                                        body.scrollHeight, body.offsetHeight,
+                                        root ? root.scrollHeight : 0,
+                                    );
+                                    const h = Math.min(2400, Math.max(60, natural + 4));
+                                    f.style.height = h + 'px';
+                                } catch { /* 同源读不到时静默 */ }
+                            };
+                            fit();
+                            // 交互卡片（:checked 展开 / 折叠）、动画、字体晚到都会改变高度，
+                            // 用 ResizeObserver 持续跟随，让高度始终自适应而不是只量一次。
+                            f.__htmlCardRO?.disconnect();
+                            if (typeof ResizeObserver !== 'undefined') {
+                                const ro = new ResizeObserver(() => fit());
+                                ro.observe(doc.body);
+                                if (doc.documentElement) ro.observe(doc.documentElement);
+                                f.__htmlCardRO = ro;
+                            }
                         } catch { /* 同源也读不到时静默 */ }
                     }}
                 />
