@@ -330,21 +330,42 @@ const ImportRecoveryPopup: React.FC<{
 // App 懒加载占位：关键是「延迟出现」。chunk 命中缓存/快速加载只需几十毫秒，这种时长用户
 // 本就无感——但 Suspense fallback 会立刻渲染，占位一闪反而把无感瞬切变成能被看见的打断
 // （loading spinner 闪烁反模式）。所以前 ~220ms 一律渲染空（无感），只有真的慢才柔和浮现。
-// 不用三点/转圈/进度条，而是与开机「世界入场」同一套语言：一颗呼吸的柔光球 + 缓缓扩散的光晕，
-// 像「这一小块世界正在成形」。用内联 @keyframes（CDN 版 Tailwind 不可靠生成自定义动画类）。
+// 不用三点/转圈/进度条，而是开机「世界入场」的微缩版：柔光呼吸 + 柔边光晕扩散 + 上升的微尘
+// + 明亮内核，像「这一小块世界正在凝聚」。透明底，让外壳的虚化壁纸透出来，强化「世界」感。
+// 用内联 @keyframes（CDN 版 Tailwind 不可靠生成自定义动画类）。
 const AppLoadingFallback: React.FC = () => {
   const [show, setShow] = useState(false);
   useEffect(() => {
     const t = setTimeout(() => setShow(true), 220);
     return () => clearTimeout(t);
   }, []);
+  // 几颗缓缓上升的微尘（位置/节奏随机，避免机械感）；只动 transform/opacity。
+  const motes = useMemo(() => Array.from({ length: 5 }, () => ({
+    left: 12 + Math.random() * 76,
+    size: 2 + Math.random() * 2,
+    delay: -Math.random() * 4,
+    dur: 3.4 + Math.random() * 2.2,
+  })), []);
   if (!show) return null;
   return (
-    <div className="w-full h-full flex items-center justify-center bg-transparent" style={{ animation: 'appLoadIn 280ms ease-out both' }}>
-      <style>{`@keyframes appLoadIn{from{opacity:0}to{opacity:1}}@keyframes appOrbBreathe{0%,100%{transform:scale(.82);opacity:.5}50%{transform:scale(1);opacity:1}}@keyframes appHalo{0%{transform:scale(.7);opacity:.45}100%{transform:scale(1.7);opacity:0}}`}</style>
-      <div className="relative w-16 h-16 flex items-center justify-center">
-        <span className="absolute inset-0 rounded-full" style={{ border: '1px solid hsla(var(--primary-hue),60%,75%,0.55)', animation: 'appHalo 2.2s ease-out infinite' }} />
-        <span className="w-7 h-7 rounded-full" style={{ background: 'radial-gradient(circle, hsla(var(--primary-hue),70%,72%,0.95), hsla(var(--primary-hue),70%,60%,0.18) 62%, transparent 72%)', animation: 'appOrbBreathe 2s ease-in-out infinite' }} />
+    <div className="w-full h-full flex items-center justify-center bg-transparent" style={{ animation: 'appLoadIn 320ms ease-out both' }}>
+      <style>{`
+        @keyframes appLoadIn{from{opacity:0}to{opacity:1}}
+        @keyframes appBloom{0%,100%{transform:translate(-50%,-50%) scale(.85);opacity:.45}50%{transform:translate(-50%,-50%) scale(1.08);opacity:.85}}
+        @keyframes appRipple{0%{transform:translate(-50%,-50%) scale(.5);opacity:.5}100%{transform:translate(-50%,-50%) scale(1.7);opacity:0}}
+        @keyframes appMote{0%{transform:translateY(34px);opacity:0}25%{opacity:1}75%{opacity:1}100%{transform:translateY(-46px);opacity:0}}
+      `}</style>
+      <div className="relative" style={{ width: 96, height: 132 }}>
+        {/* 核心柔光（呼吸）—— 世界的光源 */}
+        <div className="absolute" style={{ left: '50%', top: '50%', width: 130, height: 130, transform: 'translate(-50%,-50%)', borderRadius: '9999px', filter: 'blur(6px)', background: 'radial-gradient(circle, hsla(var(--primary-hue),75%,72%,0.55) 0%, hsla(var(--primary-hue),70%,60%,0.12) 45%, transparent 68%)', animation: 'appBloom 2.2s ease-in-out infinite' }} />
+        {/* 扩散光晕（柔边，非硬框） */}
+        <div className="absolute" style={{ left: '50%', top: '50%', width: 64, height: 64, transform: 'translate(-50%,-50%)', borderRadius: '9999px', filter: 'blur(2px)', background: 'radial-gradient(circle, transparent 52%, hsla(var(--primary-hue),70%,80%,0.5) 64%, transparent 80%)', animation: 'appRipple 2.6s ease-out infinite' }} />
+        {/* 上升的微尘 */}
+        {motes.map((p, i) => (
+          <span key={i} className="absolute rounded-full" style={{ left: `${p.left}%`, top: '50%', width: p.size, height: p.size, background: 'radial-gradient(circle, hsla(var(--primary-hue),85%,86%,0.95), transparent 70%)', animation: `appMote ${p.dur}s ease-in-out ${p.delay}s infinite`, willChange: 'transform' }} />
+        ))}
+        {/* 明亮内核 */}
+        <div className="absolute" style={{ left: '50%', top: '50%', width: 10, height: 10, transform: 'translate(-50%,-50%)', borderRadius: '9999px', background: 'radial-gradient(circle, #fff, hsla(var(--primary-hue),80%,75%,0.6) 60%, transparent)', boxShadow: '0 0 12px hsla(var(--primary-hue),80%,75%,0.7)', animation: 'appBloom 2.2s ease-in-out infinite' }} />
       </div>
     </div>
   );
