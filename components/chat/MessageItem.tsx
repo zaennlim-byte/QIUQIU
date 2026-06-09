@@ -283,9 +283,9 @@ const ForwardCard: React.FC<{
 
             {/* Expanded Full-screen Overlay */}
             {expanded && (
-                <div className="fixed inset-0 z-[100] bg-slate-50 flex flex-col animate-fade-in" onClick={(e) => e.stopPropagation()}>
+                <div className="fixed inset-0 z-[100] bg-slate-50 flex flex-col animate-fade-in" style={{ paddingBottom: 'var(--safe-bottom)' }} onClick={(e) => e.stopPropagation()}>
                     {/* Header */}
-                    <div className="pt-[calc(env(safe-area-inset-top)+0.75rem)] pb-3 px-4 bg-white border-b border-slate-100 shrink-0 flex items-center gap-3">
+                    <div className="pt-[calc(var(--safe-top)+0.75rem)] pb-3 px-4 bg-white border-b border-slate-100 shrink-0 flex items-center gap-3">
                         <button onClick={() => setExpanded(false)} className="p-2 -ml-2 rounded-full hover:bg-slate-100 text-slate-600">
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
                         </button>
