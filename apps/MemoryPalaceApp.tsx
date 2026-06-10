@@ -3752,6 +3752,7 @@ create table if not exists memory_vectors (
                                     <div style={{ padding: '0 12px 12px', borderTop: '1px solid #e0e7ff' }}>
                                         <div style={{ fontSize: 10, color: '#6b7280', margin: '10px 0 8px', lineHeight: 1.5 }}>
                                             盒名和标签仅用于召回时的展示抬头，不参与检索打分（改它不影响召回哪些记忆）。
+                                            注意：盒子之后再次压缩时，副 API 可能重新生成盒名/标签覆盖你的修改，不满意再改一次即可。
                                         </div>
                                         <label style={{ fontSize: 11, fontWeight: 600, color: '#4338ca' }}>盒名</label>
                                         <input
