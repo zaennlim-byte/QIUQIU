@@ -15,6 +15,10 @@
  */
 
 import worker, { type Env } from './index';
+import { INSTANT_WORKER_VERSION } from '../../../utils/instantWorkerVersion';
+
+/** 入口自身的修订号: 部署后看启动日志确认 Playground 实际跑的是哪一版。 */
+const DENO_ENTRY_REVISION = 'keeper-v1';
 
 declare const Deno: {
   env: { get(name: string): string | undefined };
@@ -100,6 +104,11 @@ function keeperResponse(): Response {
     { headers: { 'Content-Type': 'text/plain; charset=utf-8' } },
   );
 }
+
+console.log('[deno-entry] boot', {
+  revision: DENO_ENTRY_REVISION,
+  workerVersion: INSTANT_WORKER_VERSION,
+});
 
 Deno.serve((request: Request) => {
   if (new URL(request.url).pathname === KEEPER_PATH) {

@@ -95,6 +95,14 @@ const ERROR_EVENT_TYPES = new Set([
 ]);
 
 const TRACE_EVENT_TYPES = new Set([
+  // 主链路里程碑: 一次会话的完整叙事是
+  //   request → llm_start → llm_done → push_sent×N (前台还有 sse_payload_enqueued)
+  // llm_start 和 llm_done 之间的安静期 = 在等上游 LLM, 不是卡死。
+  'request',
+  'llm_start',
+  'llm_done',
+  'push_sent',
+  'multipart_sent',
   'sse_stream_aborted',
   'sse_stream_canceled',
   'sse_payload_enqueued',

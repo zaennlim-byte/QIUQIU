@@ -2762,6 +2762,14 @@ var ERROR_EVENT_TYPES = /* @__PURE__ */ new Set([
   "multipart_too_many_chunks"
 ]);
 var TRACE_EVENT_TYPES = /* @__PURE__ */ new Set([
+  // 主链路里程碑: 一次会话的完整叙事是
+  //   request → llm_start → llm_done → push_sent×N (前台还有 sse_payload_enqueued)
+  // llm_start 和 llm_done 之间的安静期 = 在等上游 LLM, 不是卡死。
+  "request",
+  "llm_start",
+  "llm_done",
+  "push_sent",
+  "multipart_sent",
   "sse_stream_aborted",
   "sse_stream_canceled",
   "sse_payload_enqueued",
@@ -3247,6 +3255,7 @@ function warnIfPayloadLarge(payload, onSizeWarn) {
 }
 
 // worker/instant-push/src/deno.ts
+var DENO_ENTRY_REVISION = "keeper-v1";
 function readEnv() {
   return {
     VAPID_PUBLIC_KEY: Deno.env.get("VAPID_PUBLIC_KEY") ?? "",
@@ -3304,6 +3313,10 @@ function keeperResponse() {
     { headers: { "Content-Type": "text/plain; charset=utf-8" } }
   );
 }
+console.log("[deno-entry] boot", {
+  revision: DENO_ENTRY_REVISION,
+  workerVersion: INSTANT_WORKER_VERSION
+});
 Deno.serve((request) => {
   if (new URL(request.url).pathname === KEEPER_PATH) {
     return keeperResponse();
