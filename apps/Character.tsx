@@ -437,7 +437,7 @@ const Character: React.FC = () => {
               headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
               body: JSON.stringify({ model: apiConfig.model, messages: [{ role: 'user', content: prompt }], temperature: 0.5, max_tokens: 8000, stream: false }),
           }, 0);
-          let summary = (data.choices?.[0]?.message?.content || '').trim().replace(/^["']|["']$/g, '');
+          let summary = extractContent(data).replace(/^["']|["']$/g, '');
           if (!summary) throw new Error('空响应');
 
           // upsert：同日期的 mood='archive' 替换；'palace' 自动归档不碰
@@ -496,7 +496,7 @@ const Character: React.FC = () => {
       try { 
           const prompt = `Task: Convert this text log into a JSON array. Format: [{ "date": "YYYY-MM-DD", "summary": "...", "mood": "..." }] Text: ${importText.substring(0, 8000)}`; 
           const data = await safeFetchJson(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` }, body: JSON.stringify({ model: apiConfig.model, messages: [{ role: "user", content: prompt }], temperature: 0.1 }) }, 0);
-          let content = data.choices?.[0]?.message?.content || ''; 
+          let content = extractContent(data);
           content = content.replace(/```json/g, '').replace(/```/g, '').trim(); 
           const firstBracket = content.indexOf('['); 
           const lastBracket = content.lastIndexOf(']'); 
@@ -767,8 +767,8 @@ ${isInitialGeneration ? `
                   temperature: 0.5
               })
           }, 0);
-          let content = data.choices[0].message.content;
-          
+          let content = extractContent(data);
+
           content = content.replace(/```json/g, '').replace(/```/g, '').trim();
           const parsed = normalizeUserImpression(JSON.parse(content));
           if (!parsed) throw new Error('印象生成结果不完整');
