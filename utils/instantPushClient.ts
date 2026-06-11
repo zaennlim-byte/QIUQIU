@@ -490,6 +490,44 @@ export async function copyInstantWorkerBundleToClipboard(): Promise<void> {
 }
 
 /**
+ * 生成 Deno Deploy Playground 用的 loader 片段（自动追新部署方式）。
+ *
+ * 用户贴一次, 之后每次冷启动 loader 都 fetch 站点发布的最新 bundle 文本,
+ * 塞进 data: URL 再 import。效果: 部署一次, 永久自动追新, 用户无需再碰
+ * Playground。
+ *
+ * 为什么不直接动态 import 远程 URL: Deno Deploy 线上运行时带 --cached-only,
+ * 只认部署时已缓存的模块, 运行时拼出来的远程 specifier 一律拒载
+ * ("Specifier not found in cache")。而 fetch 拿文本不受模块缓存管制,
+ * data: URL 自带内容不算远程模块, 两步合起来就绕开了封锁 (本地
+ * `deno run --cached-only` 模拟已验证)。
+ *
+ * 站点不可用时 loader 直接抛错起不来 —— 没有可回退的缓存副本, 下次
+ * 冷启动自然重试。
+ *
+ * @param site 站点根 URL。默认取当前页面 origin + BASE_URL, 自部署站点
+ *             因此天然指向自己发布的那份 bundle。
+ */
+export function buildDenoLoaderSnippet(site?: string): string {
+  let resolvedSite = site ?? new URL(import.meta.env.BASE_URL || '/', window.location.origin).href;
+  if (!resolvedSite.endsWith('/')) resolvedSite += '/';
+  return [
+    '// SullyOS Instant Push — Deno Deploy loader (自动追新)',
+    '// 整段贴进 Playground 即可, 之后无需手动更新 worker。',
+    'export {}; // 标记为 module, 顶层 await 才合法',
+    `const SITE = ${JSON.stringify(resolvedSite)};`,
+    'const code = await (await fetch(`${SITE}instant-worker.deno.bundle.js`, { cache: "no-store" })).text();',
+    'await import(`data:application/javascript;charset=utf-8,${encodeURIComponent(code)}`);',
+    '',
+  ].join('\n');
+}
+
+/** 复制 Deno loader 片段到剪贴板。与 copyInstantWorkerBundleToClipboard 平行的 Deno 版入口。 */
+export async function copyDenoLoaderToClipboard(): Promise<void> {
+  await navigator.clipboard.writeText(buildDenoLoaderSnippet());
+}
+
+/**
  * 根据用户填的 workerUrl 推算 Cloudflare dashboard 编辑界面的 deep link。
  *
  * Cloudflare 接受 `?to=/:account/...` 模式, 登录后会自动用当前账号 ID 替换 :account
