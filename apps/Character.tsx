@@ -14,7 +14,7 @@ import { formatMessageWithTime, formatMessageForPrompt } from '../utils/messageF
 import { DEFAULT_ARCHIVE_PROMPTS } from '../components/chat/ChatConstants';
 import ImpressionPanel from '../components/character/ImpressionPanel';
 import MemoryArchivist from '../components/character/MemoryArchivist';
-import { safeResponseJson, extractContent } from '../utils/safeApi';
+import { safeFetchJson, extractContent } from '../utils/safeApi';
 import { fetchMiniMaxVoices, MiniMaxVoiceItem } from '../utils/minimaxVoice';
 import { resolveMiniMaxApiKey } from '../utils/minimaxApiKey';
 import { normalizeUserImpression } from '../utils/impression';
@@ -350,7 +350,7 @@ const Character: React.FC = () => {
       const refineUrl = `${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`;
       const t0 = performance.now();
       try {
-          const response = await fetch(refineUrl, {
+          const data = await safeFetchJson(refineUrl, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
               body: JSON.stringify({
@@ -361,10 +361,8 @@ const Character: React.FC = () => {
                   ],
                   temperature: 0.3,
               })
-          });
+          }, 0);
           const dt = Math.round(performance.now() - t0);
-          if (!response.ok) throw new Error(`API Request failed (HTTP ${response.status} after ${dt}ms)`);
-          const data = await safeResponseJson(response);
           const summary = extractContent(data);
           if (!summary) {
               // 失败时留一条诊断 warn：Gemini 3.1 preview 在某些 prompt 下会静默拒答
@@ -434,13 +432,11 @@ const Character: React.FC = () => {
           prompt = prompt.replace(/\$\{userProfile\.name\}/g, userProfile.name);
           prompt = prompt.replace(/\$\{rawLog.*?\}/g, rawLog.substring(0, 200000));
 
-          const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+          const data = await safeFetchJson(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
               body: JSON.stringify({ model: apiConfig.model, messages: [{ role: 'user', content: prompt }], temperature: 0.5, max_tokens: 8000, stream: false }),
-          });
-          if (!response.ok) throw new Error(`API ${response.status}`);
-          const data = await safeResponseJson(response);
+          }, 0);
           let summary = (data.choices?.[0]?.message?.content || '').trim().replace(/^["']|["']$/g, '');
           if (!summary) throw new Error('空响应');
 
@@ -499,9 +495,7 @@ const Character: React.FC = () => {
       
       try { 
           const prompt = `Task: Convert this text log into a JSON array. Format: [{ "date": "YYYY-MM-DD", "summary": "...", "mood": "..." }] Text: ${importText.substring(0, 8000)}`; 
-          const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` }, body: JSON.stringify({ model: apiConfig.model, messages: [{ role: "user", content: prompt }], temperature: 0.1 }) }); 
-          if (!response.ok) throw new Error(`HTTP Error: ${response.status}`); 
-          const data = await safeResponseJson(response); 
+          const data = await safeFetchJson(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` }, body: JSON.stringify({ model: apiConfig.model, messages: [{ role: "user", content: prompt }], temperature: 0.1 }) }, 0);
           let content = data.choices?.[0]?.message?.content || ''; 
           content = content.replace(/```json/g, '').replace(/```/g, '').trim(); 
           const firstBracket = content.indexOf('['); 
@@ -577,19 +571,23 @@ const Character: React.FC = () => {
                 prompt = prompt.replace(/\$\{userProfile\.name\}/g, userProfile.name);
                 prompt = prompt.replace(/\$\{rawLog.*?\}/g, rawLog.substring(0, 200000));
 
-                const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
-                    body: JSON.stringify({
-                        model: apiConfig.model,
-                        messages: [{ role: "user", content: prompt }],
-                        max_tokens: 8000, 
-                        temperature: 0.5
-                    })
-                });
+                let data: any = null;
+                try {
+                    data = await safeFetchJson(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
+                        body: JSON.stringify({
+                            model: apiConfig.model,
+                            messages: [{ role: "user", content: prompt }],
+                            max_tokens: 8000,
+                            temperature: 0.5
+                        })
+                    }, 0);
+                } catch {
+                    // 单天失败软跳过，继续后面的日期（与原 if(response.ok) 的语义一致）
+                }
 
-                if (response.ok) {
-                    const data = await safeResponseJson(response);
+                if (data) {
                     let summary = extractContent(data);
                     summary = summary.replace(/^["']|["']$/g, '').trim();
 
@@ -759,19 +757,16 @@ ${isInitialGeneration ? `
 }
 注意：observed_changes 的每一项必须是纯字符串（string），例如 ["最近变得更开朗了", "开始主动分享日常"]。严禁使用对象格式如 {"period": "...", "description": "..."}。`;
 
-          const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+          const data = await safeFetchJson(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
               body: JSON.stringify({
                   model: apiConfig.model,
                   messages: [{ role: "user", content: prompt }],
-                  max_tokens: 8000, 
+                  max_tokens: 8000,
                   temperature: 0.5
               })
-          });
-
-          if (!response.ok) throw new Error('API Request Failed');
-          const data = await safeResponseJson(response);
+          }, 0);
           let content = data.choices[0].message.content;
           
           content = content.replace(/```json/g, '').replace(/```/g, '').trim();
