@@ -795,6 +795,11 @@ const WorldEditor: React.FC<{
                 </button>
             )}
 
+            {/* 用量提示：一次观测 ≈ 角色数 + 1 次 API（NPC 引擎 1 次 + 每个角色各 1 次） */}
+            <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-3 text-[11px] leading-relaxed text-amber-800">
+                ⚠️ 每次「观测」大约会调用 <b>{Math.max(1, w.memberIds.length)}+1</b> 次 API（{w.memberIds.length} 个角色各 1 次 + NPC 世界引擎 1 次{w.timeMode === 'sim' ? '，每 20 天结卷再多 1 次' : ''}）。角色越多越费，请留意用量；建议在右上角 <b>齿轮</b> 给家园单独配一份<b>更轻量/便宜的 API</b>。
+            </div>
+
             <div className="fixed bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-[#f3eee3] via-[#f3eee3]/95 to-transparent flex gap-2.5 max-w-md mx-auto">
                 <button onClick={onCancel} className="flex-1 py-2.5 rounded-2xl bg-white border border-stone-200 text-stone-600 text-[13px] font-bold shadow-sm">取消</button>
                 <button
@@ -1011,6 +1016,7 @@ const WorldView: React.FC<{
     const [openEpisodeId, setOpenEpisodeId] = useState<string | null>(null);
     const [openChapterId, setOpenChapterId] = useState<string | null>(null);
     const [chapterPage, setChapterPage] = useState(0);
+    const [seedPage, setSeedPage] = useState(0);
     const [phoneView, setPhoneView] = useState<{ ownerId: string; tab?: 'feed' | 'dm' | 'group' } | null>(null);
 
     const members = useMemo(() => world.memberIds.map(id => characters.find(c => c.id === id)).filter(Boolean) as CharacterProfile[], [world.memberIds, characters]);
@@ -1411,8 +1417,15 @@ const WorldView: React.FC<{
                         <div className={`text-[10px] font-black tracking-[0.25em] uppercase flex items-center gap-1.5 mb-2.5 ${t.textLabel}`}>
                             <EyeSlash size={11} weight="fill" />伏笔栏 · 只有你看得到<span className="normal-case tracking-normal font-medium opacity-60 ml-1">（长按删除）</span>
                         </div>
+                        {(() => {
+                            const activeSeeds = (world.seeds || []).filter(s => s.status !== 'resolved').slice().reverse();
+                            const SEED_PER = 4;
+                            const sTotal = Math.max(1, Math.ceil(activeSeeds.length / SEED_PER));
+                            const sp = Math.min(seedPage, sTotal - 1);
+                            const resolvedCount = (world.seeds || []).filter(s => s.status === 'resolved').length;
+                            return (
                         <div className="space-y-2">
-                            {(world.seeds || []).filter(s => s.status !== 'resolved').slice().reverse().map(seed => (
+                            {activeSeeds.slice(sp * SEED_PER, sp * SEED_PER + SEED_PER).map(seed => (
                                 <div key={seed.id} className={`rounded-xl border p-2.5 select-none ${seed.status === 'armed' ? 'border-rose-400/60 bg-rose-400/10' : t.panelSolid}`}
                                     onPointerDown={e => startSeedPress(e, seed)} onPointerMove={moveSeedPress} onPointerUp={cancelSeedPress} onPointerLeave={cancelSeedPress} onPointerCancel={cancelSeedPress}>
                                     <div className={`text-[11px] leading-snug ${t.textMain}`}>
@@ -1436,12 +1449,23 @@ const WorldView: React.FC<{
                                     )}
                                 </div>
                             ))}
-                            {(world.seeds || []).filter(s => s.status === 'resolved').length > 0 && (
+                            {sTotal > 1 && (
+                                <div className="flex items-center justify-center gap-3 pt-0.5">
+                                    <button onClick={() => setSeedPage(Math.max(0, sp - 1))} disabled={sp === 0}
+                                        className={`w-7 h-7 rounded-full flex items-center justify-center disabled:opacity-30 active:scale-90 transition-all ${t.chip}`}><CaretRight size={12} className="rotate-180" weight="bold" /></button>
+                                    <span className={`text-[10.5px] font-bold tabular-nums ${t.textSub}`}>{sp + 1}/{sTotal}</span>
+                                    <button onClick={() => setSeedPage(Math.min(sTotal - 1, sp + 1))} disabled={sp >= sTotal - 1}
+                                        className={`w-7 h-7 rounded-full flex items-center justify-center disabled:opacity-30 active:scale-90 transition-all ${t.chip}`}><CaretRight size={12} weight="bold" /></button>
+                                </div>
+                            )}
+                            {resolvedCount > 0 && (
                                 <div className={`text-[9.5px] ${t.textSub}`}>
                                     已爆发：{(world.seeds || []).filter(s => s.status === 'resolved').slice(-3).map(s => `${s.charName}·${s.text.slice(0, 16)}…`).join(' / ')}
                                 </div>
                             )}
                         </div>
+                            );
+                        })()}
                     </div>
                 )}
 
