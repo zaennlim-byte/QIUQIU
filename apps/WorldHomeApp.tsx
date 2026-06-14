@@ -1012,22 +1012,22 @@ const WorldView: React.FC<{
         textLabel: 'text-indigo-200/70',
         chip: 'bg-white/10 border-white/10 text-indigo-100',
         divider: 'border-white/10',
-        roofBg: 'linear-gradient(135deg,#4a3f63 0%,#37304e 100%)',
-        lawnBg: 'linear-gradient(180deg,#1d3a33 0%,#16261f 100%)',
+        roofBg: 'linear-gradient(135deg,#5a4d82 0%,#3f3560 100%)',
+        lawnBg: 'linear-gradient(180deg,#2a2350 0%,#1b1838 100%)',
         barTrack: 'bg-white/10',
     } : {
-        pageBg: 'linear-gradient(180deg,#cfe7da 0%,#ecf2e2 22%,#f5f1e3 100%)',
-        skyBg: 'linear-gradient(180deg,#79b8e3 0%,#a8d4e8 55%,#d8ecd9 100%)',
-        panel: 'bg-white/75 border-white/70 backdrop-blur shadow-[0_3px_14px_rgba(70,90,60,.08)]',
-        panelSolid: 'bg-white/90 border-stone-200/70',
-        textMain: 'text-stone-800',
-        textSub: 'text-stone-500',
-        textLabel: 'text-stone-500',
-        chip: 'bg-white/80 border-stone-200 text-stone-700',
-        divider: 'border-stone-200/70',
-        roofBg: 'linear-gradient(135deg,#c97a55 0%,#a85b3d 100%)',
-        lawnBg: 'linear-gradient(180deg,#9ecf8e 0%,#7db86f 100%)',
-        barTrack: 'bg-stone-200/80',
+        pageBg: 'linear-gradient(180deg,#e6def4 0%,#eee9f7 40%,#f6f2fb 100%)',
+        skyBg: 'linear-gradient(180deg,#b3a6dd 0%,#cabfe8 55%,#e3def2 100%)',
+        panel: 'bg-white/75 border-white/70 backdrop-blur shadow-[0_3px_14px_rgba(120,100,180,.1)]',
+        panelSolid: 'bg-white/90 border-purple-200/60',
+        textMain: 'text-[#3f3460]',
+        textSub: 'text-purple-400',
+        textLabel: 'text-purple-400/80',
+        chip: 'bg-white/80 border-purple-200/70 text-purple-900',
+        divider: 'border-purple-200/60',
+        roofBg: 'linear-gradient(135deg,#9a86c8 0%,#7d68ad 100%)',
+        lawnBg: 'linear-gradient(180deg,#cdbfe8 0%,#b3a2d8 100%)',
+        barTrack: 'bg-purple-200/70',
     };
 
     return (
@@ -1135,9 +1135,9 @@ const WorldView: React.FC<{
                     </div>
                 )}
 
-                {/* ── 村庄：各家小屋（拜访） ── */}
+                {/* ── 邻里：各家小屋（去串门） ── */}
                 <div>
-                    <div className={`text-[10px] font-black tracking-[0.25em] uppercase px-1 mb-2 flex items-center gap-1.5 ${t.textLabel}`}><House size={11} weight="fill" />村庄 · 去串门</div>
+                    <div className={`text-[10px] font-black tracking-[0.25em] uppercase px-1 mb-2 flex items-center gap-1.5 ${t.textLabel}`}><House size={11} weight="fill" />邻里 · 去串门</div>
                     <div className="space-y-2.5">
                         {visitHouses.map(({ house, residents }) => {
                             const open = openHouseId === house.id;
