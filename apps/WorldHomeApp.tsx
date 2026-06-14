@@ -236,13 +236,13 @@ const PhoneModal: React.FC<{
     const archivedClock = world.simSummarizedClock || 0;
     const archivedDays = Math.floor(archivedClock / 3);
 
-    // 动态：跨轮聚合该角色发过的 posts（新的在上；归档的不再显示）
+    // 动态：跨轮聚合该角色发过的 posts（新的在上；归档的不再显示）。key 用于关联点赞/评论。
     const feed = useMemo(() => {
-        const out: { storyTime: string; location: string; post: string; round: number }[] = [];
+        const out: { storyTime: string; location: string; post: string; round: number; key: string }[] = [];
         for (const ep of episodes) {
             if (ep.round <= archivedClock) continue;
             const b = ep.beats.find(x => x.charId === ownerId);
-            for (const p of b?.phone?.posts || []) out.push({ storyTime: ep.storyTime, location: b!.location, post: p, round: ep.round });
+            (b?.phone?.posts || []).forEach((p, idx) => out.push({ storyTime: ep.storyTime, location: b!.location, post: p, round: ep.round, key: `${ep.round}_${ownerId}_${idx}` }));
         }
         return out;
     }, [episodes, ownerId, archivedClock]);
@@ -334,16 +334,27 @@ const PhoneModal: React.FC<{
                                                         </div>
                                                     </div>
                                                     <p className="text-[11.5px] leading-[1.6] text-slate-700 mt-2 whitespace-pre-wrap">{f.post}</p>
-                                                    <div className="mt-2 pt-1.5 border-t border-slate-100 flex items-center gap-3 text-slate-400">
-                                                        <span className="flex items-center gap-0.5 text-[9px]"><Heart size={11} /> 喜欢</span>
-                                                        <span className="flex items-center gap-0.5 text-[9px]"><ChatCircleDots size={11} /> 评论</span>
-                                                        {(() => { const key = `${f.round}_${i}`; const done = sharedKeys.has(key); return (
-                                                            <button onClick={() => !done && shareToChat(key, f.post)} disabled={done}
-                                                                className={`ml-auto flex items-center gap-0.5 text-[9px] font-bold ${done ? 'text-emerald-500' : 'text-sky-500 active:scale-95'}`}>
-                                                                <PaperPlaneTilt size={11} weight={done ? 'fill' : 'regular'} />{done ? '已发到聊天' : '发到聊天'}
-                                                            </button>
-                                                        ); })()}
-                                                    </div>
+                                                    {(() => {
+                                                        const rx = world.feedReactions?.[f.key];
+                                                        const done = sharedKeys.has(f.key);
+                                                        return (<>
+                                                            <div className="mt-2 pt-1.5 border-t border-slate-100 flex items-center gap-3 text-slate-400">
+                                                                <span className="flex items-center gap-0.5 text-[9px]"><Heart size={11} weight={rx?.likes ? 'fill' : 'regular'} className={rx?.likes ? 'text-rose-400' : ''} /> {rx?.likes || 0}</span>
+                                                                <span className="flex items-center gap-0.5 text-[9px]"><ChatCircleDots size={11} /> {rx?.comments.length || 0}</span>
+                                                                <button onClick={() => !done && shareToChat(f.key, f.post)} disabled={done}
+                                                                    className={`ml-auto flex items-center gap-0.5 text-[9px] font-bold ${done ? 'text-emerald-500' : 'text-sky-500 active:scale-95'}`}>
+                                                                    <PaperPlaneTilt size={11} weight={done ? 'fill' : 'regular'} />{done ? '已发到聊天' : '发到聊天'}
+                                                                </button>
+                                                            </div>
+                                                            {rx && rx.comments.length > 0 && (
+                                                                <div className="mt-1.5 rounded-lg bg-slate-50 px-2.5 py-1.5 space-y-1">
+                                                                    {rx.comments.map((c, ci) => (
+                                                                        <p key={ci} className="text-[10.5px] leading-snug text-slate-600"><span className="font-bold text-slate-700">{c.from}</span>：{c.text}</p>
+                                                                    ))}
+                                                                </div>
+                                                            )}
+                                                        </>);
+                                                    })()}
                                                 </div>
                                             ))}
                                             {pages > 1 && (

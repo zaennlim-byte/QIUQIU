@@ -891,6 +891,8 @@ export interface WorldProfile {
     seeds?: WorldSeed[];
     /** 待注入的用户决策（消费后移除） */
     directives?: WorldDirective[];
+    /** 社交动态的互动：key = `${round}_${charId}_${postIdx}`，值含点赞数 + 评论（NPC/路人）。 */
+    feedReactions?: Record<string, { likes: number; comments: { from: string; text: string }[] }>;
     /** 每天离线 tick 的时段（早/午/晚），空数组 = 仅手动观测推进 */
     offlineTickSlots?: ('morning' | 'noon' | 'evening')[];
     /** 剧情时钟：累计推进的半天数（0 = 第1天白天） */

@@ -413,6 +413,13 @@ describe('NPC 私聊（角色发、NPC 那一轮统一回复）', () => {
         const out = parseNpcScene('```json\n{"scene":"x","hooks":[],"groupLines":[],"dms":[{"from":"老板娘","to":"小满","lines":["给你留俩"]}]}\n```');
         expect(out.dms).toEqual([{ from: '老板娘', to: '小满', lines: ['给你留俩'] }]);
     });
+
+    it('parseNpcScene：解析动态点赞/评论（NPC+路人），likes 钳整数', () => {
+        const out = parseNpcScene('```json\n{"scene":"x","feedReactions":[{"ref":"3_a_0","likes":"12","comments":[{"from":"街角咖啡师","text":"好可爱！"},{"from":"路人乙"}]}]}\n```');
+        expect(out.feedReactions).toHaveLength(1);
+        expect(out.feedReactions[0]).toMatchObject({ ref: '3_a_0', likes: 12 });
+        expect(out.feedReactions[0].comments).toEqual([{ from: '街角咖啡师', text: '好可爱！' }]); // 无 text 的被过滤
+    });
 });
 
 describe('applyRelationshipDeltas（有向回填）', () => {

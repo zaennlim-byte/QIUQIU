@@ -435,10 +435,15 @@ export function buildNpcTurn(args: {
     chapterAtmosphere?: string;
     /** 成员发给各 NPC、还没回的私信收件箱 */
     inboxes?: { npcName: string; memberName: string; recent: string }[];
+    /** 最近的社交动态（让 NPC + 路人疯狂点赞/评论） */
+    recentPosts?: { ref: string; name: string; post: string }[];
 }): string {
-    const { world, members, storyTime, lastSummary, chapterAtmosphere, inboxes } = args;
+    const { world, members, storyTime, lastSummary, chapterAtmosphere, inboxes, recentPosts } = args;
     const inboxSection = (inboxes && inboxes.length > 0)
         ? `\n## 📨 NPC 收到的私信（请让对应 NPC 回复）\n${inboxes.map(b => `▸ ${b.memberName} → ${b.npcName}：\n${b.recent}`).join('\n')}`
+        : '';
+    const postsSection = (recentPosts && recentPosts.length > 0)
+        ? `\n## 📱 社交动态（请热闹地点赞 + 评论——NPC 和路人都可以；ref 原样回填）\n${recentPosts.map(p => `[${p.ref}] ${p.name}：${p.post}`).join('\n')}`
         : '';
     return `你是共同世界「${world.name}」的世界引擎，负责一次性扮演镇上所有 NPC。NPC 没有独立记忆，完全为世界观氛围服务。
 
@@ -453,15 +458,17 @@ ${members.map(m => m.name).join('、')}
 
 ## 之前发生的事
 ${lastSummary || '（这是这个世界的第一个半天）'}
-${chapterAtmosphere ? `\n## 这段日子的氛围基调\n${chapterAtmosphere}` : ''}${inboxSection}
+${chapterAtmosphere ? `\n## 这段日子的氛围基调\n${chapterAtmosphere}` : ''}${inboxSection}${postsSection}
 剧情时间：${storyTime}。
 一次性输出这一段所有 NPC 的群像动静。严格输出一个 JSON 对象（建议用 \`\`\`json 包裹）：
 {
   "scene": "200~400字的 NPC 群像叙述：谁在做什么、市井气息、天气与街景、和主角们擦肩的小事件。生活感优先，不要推进重大剧情。",
   "hooks": ["1~3个可以被主角们接住的小事件钩子（例：面包店老板娘今天多烤了一炉栗子面包，见人就塞）"],
   "groupLines": [{ "name": "NPC的名字", "line": "ta在世界群聊里冒泡的一句话（0~2条，市井闲聊/吆喝/通知，别太频繁）" }],
-  "dms": [{ "from": "NPC的名字", "to": "给ta发私信的成员名", "lines": ["NPC 私信回复（针对上面收件箱里的消息；没有要回的就空数组）"] }]
-}`;
+  "dms": [{ "from": "NPC的名字", "to": "给ta发私信的成员名", "lines": ["NPC 私信回复（针对上面收件箱里的消息；没有要回的就空数组）"] }],
+  "feedReactions": [{ "ref": "动态的ref原样", "likes": 点赞数(0~99的整数), "comments": [{ "from": "评论者名字（NPC 或随手编一个路人网名，如「街角咖啡师」「ConanFan_07」）", "text": "一句评论，热闹、口语、有梗" }] }]
+}
+让社交动态**热闹起来**：给每条动态都点上赞、配几条评论；评论者多用路人网名（不必是 NPC），像真的社交平台一样你一言我一语。`;
 }
 
 // ── 输出解析 ──────────────────────────────────────────────
@@ -579,7 +586,7 @@ export function parseCharBeat(raw: string, char: CharacterProfile, memberNames: 
 }
 
 /** 解析 NPC 世界引擎输出。 */
-export function parseNpcScene(raw: string): { scene: string; hooks: string[]; groupLines: { name: string; line: string }[]; dms: { from: string; to: string; lines: string[] }[] } {
+export function parseNpcScene(raw: string): { scene: string; hooks: string[]; groupLines: { name: string; line: string }[]; dms: { from: string; to: string; lines: string[] }[]; feedReactions: { ref: string; likes: number; comments: { from: string; text: string }[] }[] } {
     const j = extractJson(raw);
     if (j && typeof j.scene === 'string') {
         return {
@@ -598,8 +605,21 @@ export function parseNpcScene(raw: string): { scene: string; hooks: string[]; gr
                     .filter((d: any) => d.lines.length > 0)
                     .slice(0, 8)
                 : [],
+            feedReactions: Array.isArray(j.feedReactions)
+                ? j.feedReactions
+                    .filter((r: any) => r && typeof r.ref === 'string')
+                    .map((r: any) => ({
+                        ref: r.ref.trim(),
+                        likes: clampNum(r.likes, 0, 999, 0),
+                        comments: Array.isArray(r.comments)
+                            ? r.comments.filter((c: any) => c && typeof c.from === 'string' && typeof c.text === 'string' && c.text.trim())
+                                .map((c: any) => ({ from: c.from.trim().slice(0, 20), text: c.text.trim().slice(0, 160) })).slice(0, 8)
+                            : [],
+                    }))
+                    .slice(0, 20)
+                : [],
         };
     }
     const fallback = (raw || '').replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/```(?:json)?|```/g, '').trim().slice(0, 500);
-    return { scene: fallback, hooks: [], groupLines: [], dms: [] };
+    return { scene: fallback, hooks: [], groupLines: [], dms: [], feedReactions: [] };
 }

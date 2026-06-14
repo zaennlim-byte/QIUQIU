@@ -239,6 +239,14 @@ export async function runWorldEpisode(deps: WorldEpisodeDeps): Promise<WorldEpis
             ? summarySource.slice().reverse().map(e => e.summary).join('\n')
             : undefined;
 
+        // 最近的社交动态（喂给 NPC 引擎去点赞/评论；ref = round_charId_postIdx，回填到 world.feedReactions）
+        const recentPostsForNpc: { ref: string; name: string; post: string }[] = [];
+        for (const ep of summarySource.slice(0, 2)) {
+            for (const b of ep.beats) {
+                (b.phone?.posts || []).forEach((post, idx) => recentPostsForNpc.push({ ref: `${ep.round}_${b.charId}_${idx}`, name: b.charName, post }));
+            }
+        }
+
         // ── 1. NPC 世界引擎（一次调用全搞定；没有 NPC 就跳过） ──
         let npcScene: string | undefined;
         let npcHooks: string[] = [];
@@ -249,7 +257,7 @@ export async function runWorldEpisode(deps: WorldEpisodeDeps): Promise<WorldEpis
                     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${api.apiKey || 'sk-none'}` },
                     body: JSON.stringify({
                         model: api.model,
-                        messages: [{ role: 'user', content: buildNpcTurn({ world, members, storyTime, lastSummary, chapterAtmosphere: latestChapter?.atmosphere, inboxes: npcInboxes(world) }) }],
+                        messages: [{ role: 'user', content: buildNpcTurn({ world, members, storyTime, lastSummary, chapterAtmosphere: latestChapter?.atmosphere, inboxes: npcInboxes(world), recentPosts: recentPostsForNpc.slice(0, 10) }) }],
                         temperature: 0.9, stream: false,
                     }),
                 }, 2, 0, { appName: '家园', purpose: `NPC世界引擎 · ${world.name}` });
@@ -259,6 +267,11 @@ export async function runWorldEpisode(deps: WorldEpisodeDeps): Promise<WorldEpis
                 // NPC 在世界群聊里冒泡 + 回复成员的私信（先落线程，角色们这轮就能看到并接话）
                 applyNpcGroupLines(world, parsed.groupLines, round, storyTime);
                 applyNpcDms(world, parsed.dms, members, round, storyTime);
+                // 动态的点赞/评论（NPC + 路人）回填
+                if (parsed.feedReactions.length > 0) {
+                    world.feedReactions = { ...(world.feedReactions || {}) };
+                    for (const r of parsed.feedReactions) world.feedReactions[r.ref] = { likes: r.likes, comments: r.comments };
+                }
             } catch (e) {
                 // NPC 失败不阻塞角色演绎——世界这半天只是安静一点
                 console.warn('[WorldHome] NPC engine failed, continuing without npcScene:', e);
@@ -391,9 +404,14 @@ export async function runWorldEpisode(deps: WorldEpisodeDeps): Promise<WorldEpis
                 if (chapter) {
                     updatedWorld.chapters = [...(updatedWorld.chapters || []), chapter];
                     updatedWorld.simSummarizedClock = newClock;
-                    // 归档后清空手机里属于这 20 天的私聊/群聊（已卷进编年史，手机只留归档后的新消息）
+                    // 归档后清空手机里属于这 20 天的私聊/群聊 + 动态互动（已卷进编年史）
                     if (updatedWorld.threads) {
                         updatedWorld.threads = updatedWorld.threads.map(t => ({ ...t, messages: t.messages.filter(m => m.round > newClock) }));
+                    }
+                    if (updatedWorld.feedReactions) {
+                        updatedWorld.feedReactions = Object.fromEntries(
+                            Object.entries(updatedWorld.feedReactions).filter(([k]) => (parseInt(k.split('_')[0], 10) || 0) > newClock)
+                        );
                     }
                     updatedWorld.updatedAt = Date.now();
                     await DB.saveWorld(updatedWorld);
