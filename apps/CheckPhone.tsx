@@ -6,10 +6,11 @@ import { ContextBuilder } from '../utils/context';
 import Modal from '../components/os/Modal';
 import { safeResponseJson } from '../utils/safeApi';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
+import PersonaSim, { LifeLog } from './PersonaSim';
 import {
     User, Phone, ChatCircleDots, ChatCircle, ShoppingBag, Hamburger, Compass, GearSix,
     Plus, SignOut, CaretLeft, CaretRight, Cloud, ImagesSquare, LockSimple, Package,
-    Storefront, Heart, ArrowsClockwise, Tray, DotsThree
+    Storefront, Heart, ArrowsClockwise, Tray, DotsThree, ClockCounterClockwise
 } from '@phosphor-icons/react';
 
 type LayoutId = NonNullable<PhoneCustomApp['layout']>;
@@ -373,6 +374,7 @@ Format:
     const orderRecords = records.filter(r => r.type === 'order');
     const deliveryRecords = records.filter(r => r.type === 'delivery');
     const socialRecords = records.filter(r => r.type === 'social');
+    const simLogCount = targetChar?.phoneState?.simLogs?.length || 0;
     const lastTs = allSorted[0]?.timestamp;
 
     const appLabel = (type: string): string => {
@@ -885,7 +887,25 @@ Format:
             </div>
 
             {/* Quote */}
-            <p className="text-[13px] text-white/55 italic mb-7 leading-relaxed">{quote}</p>
+            <p className="text-[13px] text-white/55 italic mb-5 leading-relaxed">{quote}</p>
+
+            {/* Persona simulation hero */}
+            <button onClick={() => setActiveAppId('persona')}
+                className="relative w-full rounded-[24px] p-5 mb-3.5 text-left overflow-hidden border border-white/[0.09] active:scale-[0.98] transition-transform"
+                style={{ background: 'linear-gradient(115deg, rgba(184,155,255,0.22), rgba(120,90,214,0.08) 55%, rgba(20,18,30,0.4))' }}>
+                <div className="absolute -top-10 -right-6 w-40 h-40 rounded-full blur-3xl pointer-events-none" style={{ background: 'radial-gradient(circle, rgba(184,155,255,0.55), transparent 70%)' }} />
+                <div className="relative z-10">
+                    <div className="text-[10px] tracking-[0.3em] uppercase text-white/55">Persona Simulation</div>
+                    <div className="text-[18px] font-light text-white mt-1.5" style={{ fontFamily: "'Shippori Mincho','Noto Sans SC',serif" }}>成为 TA 的一段人生</div>
+                    <div className="text-[11px] text-white/55 mt-1.5">不是查看 TA 的手机 · 是用 TA 的手机活一次</div>
+                    <div className="flex items-center justify-between mt-4">
+                        <span className="text-[11px] text-white/45 flex items-center gap-1.5">
+                            <ClockCounterClockwise size={13} /> 生活记录 · {simLogCount}
+                        </span>
+                        <span className="text-[11px] font-semibold flex items-center gap-1" style={{ color: '#c9b6ff' }}>进入演出 <CaretRight size={11} weight="bold" /></span>
+                    </div>
+                </div>
+            </button>
 
             {/* App cards */}
             <div className="grid grid-cols-2 gap-3.5 mb-3.5">
@@ -1133,6 +1153,12 @@ Format:
                     {activeAppId === 'taobao' && renderShop()}
                     {activeAppId === 'waimai' && renderFood()}
                     {activeAppId === 'social' && renderMoments()}
+                    {activeAppId === 'persona' && targetChar && (
+                        <PersonaSim targetChar={targetChar} onExit={() => setActiveAppId('home')} openLifeLog={() => setActiveAppId('lifelog')} />
+                    )}
+                    {activeAppId === 'lifelog' && targetChar && (
+                        <LifeLog targetChar={targetChar} onBack={() => setActiveAppId('home')} />
+                    )}
                     {customActive && renderCustomApp(customActive)}
                 </>
             )}

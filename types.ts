@@ -567,12 +567,25 @@ export interface PhoneCustomApp {
 
 export interface PhoneEvidence {
     id: string;
-    type: 'chat' | 'order' | 'social' | 'delivery' | string; 
-    title: string; 
-    detail: string; 
+    type: 'chat' | 'order' | 'social' | 'delivery' | string;
+    title: string;
+    detail: string;
     timestamp: number;
-    systemMessageId?: number; 
-    value?: string; 
+    systemMessageId?: number;
+    value?: string;
+}
+
+// 「人格模拟」演出结束后写入「生活记录」的一条留存（角色不记得，仅作为用户的体验档案）
+export interface PhoneSimLog {
+    id: string;
+    mode: 'daily' | 'event';
+    theme: string;        // 体验内容（如「平凡的周二」）
+    title: string;        // 演出标题
+    summary: string;      // 收尾留白文字
+    ending?: string;      // 多结局版本标签
+    beatsCount: number;
+    buff?: { label: string; emoji?: string; color?: string };
+    timestamp: number;
 }
 
 export interface Worldbook {
@@ -1636,7 +1649,8 @@ export interface CharacterProfile {
 
   phoneState?: {
       records: PhoneEvidence[];
-      customApps?: PhoneCustomApp[]; 
+      customApps?: PhoneCustomApp[];
+      simLogs?: PhoneSimLog[]; // 「生活记录」：人格模拟演出留存
   };
 
   voiceProfile?: {
