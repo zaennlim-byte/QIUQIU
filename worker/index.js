@@ -31,6 +31,47 @@ function jsonResponse(obj, { status = 200, origin } = {}) {
   });
 }
 
+// ---- /fetch-webpage 用: SSRF 防护 + body 大小上限 ----
+// 网页分享代理只抓用户粘贴的公网网页, 拒绝 loopback / 私有网段 / link-local / 内网后缀。
+function isUnsafeFetchTarget(parsed) {
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return true;
+  const host = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  if (host === 'localhost' || host.endsWith('.local') || host.endsWith('.internal')) return true;
+  if (host === '::1' || host === '0.0.0.0') return true;
+  const v4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (v4) {
+    const a = Number(v4[1]), b = Number(v4[2]);
+    if (a === 127 || a === 10 || a === 0) return true;
+    if (a === 192 && b === 168) return true;
+    if (a === 169 && b === 254) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+  }
+  // IPv6 唯一本地 (fc00::/7) / link-local (fe80::/10)
+  if (/^f[cd][0-9a-f]{2}:/i.test(host) || /^fe[89ab][0-9a-f]:/i.test(host)) return true;
+  return false;
+}
+
+// 读 Response body, 累加到 maxBytes 就停 (防超大页面打爆 worker)。
+async function readBodyCapped(res, maxBytes) {
+  const reader = (res.body && res.body.getReader) ? res.body.getReader() : null;
+  if (!reader) return await res.text();
+  const chunks = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (value) {
+      total += value.length;
+      chunks.push(value);
+      if (total >= maxBytes) { try { await reader.cancel(); } catch (e) { /* ignore */ } break; }
+    }
+  }
+  const merged = new Uint8Array(total);
+  let offset = 0;
+  for (const c of chunks) { merged.set(c.subarray(0, total - offset), offset); offset += c.length; }
+  return new TextDecoder('utf-8', { fatal: false }).decode(merged);
+}
+
 function route(url) {
   const p = url.pathname.replace(/\/+$/, "");
   if (p === "" || p === "/") return { kind: "web" };
@@ -1487,6 +1528,60 @@ export default {
           error: `Proxy error: ${String(e && e.message || e)}`,
           stack: String(e && e.stack || '').slice(0, 400),
         }, { status: 502, origin });
+      }
+    }
+
+    // ========== 网页分享代理 (/fetch-webpage) ==========
+    // 前端把用户粘贴的链接发来，worker 服务端抓 HTML 回传（绕过浏览器 CORS），
+    // 前端再用 DOMParser 提正文存成 webpage_card，让角色"看见"网页内容。
+    // 见 utils/webpageExtractor.ts。SSRF 防护 + 8s 超时 + 2MB 截断，只收公网 http(s) + text/html。
+    if (url.pathname === '/fetch-webpage') {
+      if (request.method !== 'POST') {
+        return jsonResponse({ error: 'Method not allowed. Use POST.' }, { status: 405, origin });
+      }
+      let reqBody = {};
+      try { reqBody = await request.json(); } catch (e) { /* allow empty */ }
+      const rawUrl = (reqBody && typeof reqBody.url === 'string') ? reqBody.url.trim() : '';
+      if (!rawUrl) {
+        return jsonResponse({ error: 'Missing url' }, { status: 400, origin });
+      }
+      let target;
+      try { target = new URL(rawUrl); } catch {
+        return jsonResponse({ error: 'Invalid URL' }, { status: 400, origin });
+      }
+      if (isUnsafeFetchTarget(target)) {
+        return jsonResponse({ error: '只允许抓取公网 http(s) 网页' }, { status: 400, origin });
+      }
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 8000);
+      try {
+        const upstream = await fetch(target.toString(), {
+          method: 'GET',
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (compatible; SullyOS-WebpageBot/1.0; +https://github.com/sully)',
+            'Accept': 'text/html,application/xhtml+xml',
+          },
+          redirect: 'follow',
+          signal: controller.signal,
+        });
+        if (!upstream.ok) {
+          return jsonResponse({ error: `目标站点返回 HTTP ${upstream.status}` }, { status: 502, origin });
+        }
+        const ct = upstream.headers.get('content-type') || '';
+        if (ct && !/text\/html|application\/xhtml\+xml|text\/plain/i.test(ct)) {
+          return jsonResponse({ error: `不支持的内容类型: ${ct}` }, { status: 415, origin });
+        }
+        const html = await readBodyCapped(upstream, 2 * 1024 * 1024);
+        console.log('fetch-webpage', target.toString(), '→', upstream.status, html.length, 'chars');
+        return jsonResponse({ success: true, data: { html, finalUrl: upstream.url || target.toString(), contentType: ct } }, { origin });
+      } catch (e) {
+        const aborted = e && e.name === 'AbortError';
+        return jsonResponse(
+          { error: aborted ? '抓取超时' : `抓取出错: ${String((e && e.message) || e)}` },
+          { status: aborted ? 504 : 502, origin }
+        );
+      } finally {
+        clearTimeout(timer);
       }
     }
 

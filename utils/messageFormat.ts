@@ -145,6 +145,21 @@ export function normalizeMessageContent(
         return '[TRPG游戏片段]';
     }
 
+    // 网页卡片：用户粘贴链接分享的网页。卡片只给人看封面，上下文/归档/palace 要读到
+    // 提取出的正文纯文字，角色才"看见"了网页内容（正文截到 ~1500 字防 token 爆）。
+    if (type === 'webpage_card') {
+        const meta: any = msg.metadata?.webpage || {};
+        const title = meta.title || msg.content || '网页';
+        const site = meta.siteName ? `（来自 ${meta.siteName}）` : '';
+        const url = meta.finalUrl || meta.url || '';
+        const bodyRaw = (typeof meta.content === 'string' && meta.content.trim())
+            ? meta.content.trim()
+            : (typeof meta.excerpt === 'string' ? meta.excerpt.trim() : '');
+        const body = bodyRaw.length > 1500 ? bodyRaw.slice(0, 1500) + '…（正文过长已截断）' : bodyRaw;
+        const head = `[网页分享] ${userName}分享了一个网页《${title}》${site}${url ? `\n链接：${url}` : ''}`;
+        return body ? `${head}\n网页正文：\n${body}` : head;
+    }
+
     // 默认：text / 未知类型 → 用 content
     return msg.content || '';
 }
@@ -187,5 +202,5 @@ export function isMessageSemanticallyRelevant(msg: Message): boolean {
     const type = msg.type as string;
     if (type === 'image' || type === 'emoji' || type === 'voice') return false;
     // 有内容或有结构化 metadata 才算
-    return !!(msg.content?.trim() || msg.metadata?.scoreCard || msg.metadata?.amount || msg.metadata?.song || msg.metadata?.trpg);
+    return !!(msg.content?.trim() || msg.metadata?.scoreCard || msg.metadata?.amount || msg.metadata?.song || msg.metadata?.trpg || msg.metadata?.webpage);
 }

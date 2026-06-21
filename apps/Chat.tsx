@@ -9,6 +9,7 @@ import { generateDailyScheduleForChar, isScheduleFeatureOn } from '../utils/sche
 import { formatMessageWithTime } from '../utils/messageFormat';
 import { getRoomLabel } from '../utils/memoryPalace/types';
 import { XhsMcpClient, extractNotesFromMcpData, normalizeNote } from '../utils/xhsMcpClient';
+import { extractWebpageContent, detectFirstUrl, isXhsUrl } from '../utils/webpageExtractor';
 import { isMcdConfigured } from '../utils/mcdMcpClient';
 import { isMcdActivatedInMessages, MCD_ACTIVATE_TRIGGER, MCD_DEACTIVATE_TRIGGER } from '../utils/mcdToolBridge';
 import { isLuckinConfigured } from '../utils/luckinMcpClient';
@@ -853,6 +854,26 @@ const Chat: React.FC = () => {
                     }
                 } catch (e) {
                     console.warn('XHS link fetch via MCP failed:', e);
+                }
+            }
+
+            // 通用网页分享：检测到普通 http(s) 链接 → 抓取正文存成 webpage_card，
+            // 让角色"看见"网页内容。跳过 XHS 链接（上面已有专门的 MCP 卡片路径）。
+            const sharedUrl = detectFirstUrl(text);
+            if (sharedUrl && !isXhsUrl(sharedUrl) && !xhsUrlMatch) {
+                try {
+                    addToast('正在读取网页内容…', 'info');
+                    const webpage = await extractWebpageContent(sharedUrl);
+                    await DB.saveMessage({
+                        charId: char.id,
+                        role: 'user',
+                        type: 'webpage_card',
+                        content: webpage.title,
+                        metadata: { webpage },
+                    });
+                } catch (e: any) {
+                    console.warn('Webpage fetch failed:', e);
+                    addToast(`网页抓取失败：${e?.message || '可能被站点拦截，建议在设置里配置 instant worker 作代理'}`, 'error');
                 }
             }
         }
