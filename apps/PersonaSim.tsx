@@ -438,7 +438,7 @@ const PersonaSim: React.FC<Props> = ({ targetChar, onExit, openLifeLog, sim, onS
                     <div className="text-[10px] uppercase tracking-wider text-white/40 mb-2 px-1">② 补点细节 · 也可直接自己写</div>
                     <textarea value={theme} onChange={e => setTheme(e.target.value)}
                         placeholder="选个方向后在这里补充具体情境，或直接写你想看的。例如：放学后的傍晚 · 下了雨，TA 没带伞，在便利店门口等一个不一定会来的人。"
-                        className="w-full h-24 bg-white/[0.05] border border-white/[0.08] rounded-2xl px-3.5 py-3 text-[12.5px] text-white placeholder-white/25 outline-none resize-none leading-relaxed mb-4" />
+                        className="w-full h-24 bg-white/[0.05] border border-white/[0.08] rounded-2xl px-3.5 py-3 text-[12.5px] text-white placeholder-white/25 outline-none resize-none leading-relaxed mb-4 no-scrollbar" />
 
                     <button onClick={() => requestStart(mode, theme)} disabled={!theme.trim()}
                         className="w-full py-3.5 rounded-2xl text-[13px] font-semibold flex items-center justify-center gap-2 active:scale-[0.99] transition disabled:opacity-40"
