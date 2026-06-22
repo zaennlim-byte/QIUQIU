@@ -93,35 +93,66 @@ const NowPlayingSquareWidget: React.FC<{ contentColor: string }> = ({ contentCol
     );
   }
 
+  // 浅色系变体（外观设置可切换）：白卡 + 深字，给不喜欢深色玻璃卡的用户。
+  const light = !!theme.nowPlayingWidgetLight;
+  const palette = light
+    ? {
+        textColor: '#46415c',
+        cardBg: 'rgba(255,255,255,0.74)',
+        cardBorder: '1px solid rgba(120,110,150,0.18)',
+        cardShadow: '0 8px 24px rgba(80,70,120,0.16), inset 0 1px 0 rgba(255,255,255,0.7)',
+        coverOpacity: 0.2,
+        idleGlow:
+          'radial-gradient(120% 100% at 95% 100%, rgba(168,140,240,0.18), transparent 55%),' +
+          'radial-gradient(100% 80% at 0% 0%, rgba(120,165,250,0.16), transparent 60%)',
+        thumbBg: 'rgba(120,110,150,0.1)',
+        thumbBorder: '1px solid rgba(120,110,150,0.22)',
+        trackBg: 'rgba(70,65,92,0.14)',
+        playBg: '#6b5fa8',
+        playColor: '#ffffff',
+      }
+    : {
+        textColor: contentColor,
+        cardBg: 'rgba(20,18,24,0.82)',
+        cardBorder: '1px solid rgba(255,255,255,0.14)',
+        cardShadow: '0 8px 30px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.07)',
+        coverOpacity: 0.35,
+        idleGlow:
+          'radial-gradient(120% 100% at 95% 100%, rgba(192,132,252,0.22), transparent 55%),' +
+          'radial-gradient(100% 80% at 0% 0%, rgba(96,165,250,0.14), transparent 60%)',
+        thumbBg: 'rgba(255,255,255,0.1)',
+        thumbBorder: '1px solid rgba(255,255,255,0.18)',
+        trackBg: 'rgba(255,255,255,0.15)',
+        playBg: contentColor,
+        playColor: 'rgba(20,18,24,0.95)',
+      };
+
   return (
     <div
       onClick={() => openApp(AppID.Music)}
       className="relative w-full h-full rounded-[1.75rem] overflow-hidden cursor-pointer animate-fade-in group transition-transform active:scale-[0.98] flex flex-col justify-between"
       style={{
-        background: 'rgba(20,18,24,0.82)',
-        border: '1px solid rgba(255,255,255,0.14)',
-        boxShadow: '0 8px 30px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.07)',
+        background: palette.cardBg,
+        border: palette.cardBorder,
+        boxShadow: palette.cardShadow,
         padding: '12px',
-        color: contentColor,
+        color: palette.textColor,
       }}
     >
       {/* 背景封面（不再实时 blur — 改用低透明度覆盖） */}
       {albumPic ? (
-        <div className="absolute inset-0 opacity-35 pointer-events-none"
+        <div className="absolute inset-0 pointer-events-none"
           style={{
             backgroundImage: `url(${albumPic})`,
             backgroundSize: 'cover',
             backgroundPosition: 'center',
             transform: 'scale(1.1)',
+            opacity: palette.coverOpacity,
           }}
         />
       ) : (
         <div className="absolute inset-0 pointer-events-none"
-          style={{
-            background:
-              'radial-gradient(120% 100% at 95% 100%, rgba(192,132,252,0.22), transparent 55%),' +
-              'radial-gradient(100% 80% at 0% 0%, rgba(96,165,250,0.14), transparent 60%)',
-          }}
+          style={{ background: palette.idleGlow }}
         />
       )}
 
@@ -130,9 +161,9 @@ const NowPlayingSquareWidget: React.FC<{ contentColor: string }> = ({ contentCol
         <div
           className="w-9 h-9 shrink-0 rounded-lg overflow-hidden relative"
           style={{
-            background: 'rgba(255,255,255,0.1)',
-            border: '1px solid rgba(255,255,255,0.18)',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.25)',
+            background: palette.thumbBg,
+            border: palette.thumbBorder,
+            boxShadow: light ? '0 2px 8px rgba(80,70,120,0.14)' : '0 2px 8px rgba(0,0,0,0.25)',
           }}
         >
           {albumPic ? (
@@ -182,7 +213,7 @@ const NowPlayingSquareWidget: React.FC<{ contentColor: string }> = ({ contentCol
         {/* 进度条 */}
         <div className="flex flex-col gap-0.5">
           <div className="h-[3px] w-full rounded-full overflow-hidden"
-            style={{ background: acnh ? 'rgba(94,72,59,0.15)' : 'rgba(255,255,255,0.15)' }}>
+            style={{ background: acnh ? 'rgba(94,72,59,0.15)' : palette.trackBg }}>
             <div className="h-full rounded-full transition-[width] duration-150"
               style={{
                 width: `${pct}%`,
@@ -213,8 +244,8 @@ const NowPlayingSquareWidget: React.FC<{ contentColor: string }> = ({ contentCol
             onMouseDown={stopProp}
             className="w-9 h-9 flex items-center justify-center rounded-full active:scale-95 transition"
             style={{
-              background: contentColor,
-              color: 'rgba(20,18,24,0.95)',
+              background: palette.playBg,
+              color: palette.playColor,
               boxShadow: '0 3px 10px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.3)',
             }}
           >

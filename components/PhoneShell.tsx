@@ -790,11 +790,12 @@ const PhoneShell: React.FC = () => {
   return (
     <div className="relative w-full h-full overflow-hidden bg-gradient-to-br from-pink-200 via-purple-200 to-indigo-200 text-slate-900 font-sans select-none overscroll-none">
        {/* Optimized Background Layer */}
-       <div 
-         className="absolute inset-0 bg-cover bg-center transition-all duration-700 ease-[cubic-bezier(0.25,0.1,0.25,1)]"
-         style={{ 
+       {/* 壁纸底层：进 App 时只柔和虚化/压暗作背景，不再做缩放「过场」——
+          进 App 的过渡感统一交给 App 容器的淡入（见下方 animate-fade-in 包裹层）。 */}
+       <div
+         className="absolute inset-0 bg-cover bg-center transition-all duration-500 ease-[cubic-bezier(0.25,0.1,0.25,1)]"
+         style={{
              backgroundImage: bgImageValue,
-             transform: activeApp !== AppID.Launcher ? 'scale(1.1)' : 'scale(1)',
              filter: activeApp !== AppID.Launcher ? 'blur(10px)' : 'none',
              opacity: activeApp !== AppID.Launcher ? 0.6 : 1,
              backfaceVisibility: 'hidden',
@@ -821,7 +822,11 @@ const PhoneShell: React.FC = () => {
           <div className="flex-1 relative overflow-hidden" style={{ contain: useIOSStandaloneLayout ? undefined : 'layout style paint' }}>
             <AppErrorBoundary onCloseApp={closeApp} resetKey={`${activeApp}:${activeCharacterId || 'none'}`}>
               <Suspense fallback={<AppLoadingFallback onReturn={closeApp} />}>
-                {renderApp()}
+                {/* 统一「淡入」过渡：每次切换 App 时 key 变化 → 重新挂载并淡入，
+                    让所有 App 都像个人档案/神经链接那样「渐变进去」，而非瞬间咚一下。 */}
+                <div key={activeApp} className="w-full h-full animate-fade-in">
+                  {renderApp()}
+                </div>
               </Suspense>
             </AppErrorBoundary>
           </div>
