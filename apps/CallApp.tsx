@@ -1259,7 +1259,9 @@ const CallApp: React.FC = () => {
             style={{ top: p.top, left: p.left, width: p.s, height: p.s, opacity: 0.5, animationDelay: `${i * 0.4}s`, boxShadow: `0 0 6px ${accentColor}` }} />
         ))}
       </div>
-      <div className="relative z-10 flex flex-col h-full">
+      <div className="relative z-10 flex flex-col h-full" style={{ paddingBottom: 'var(--keyboard-inset, 0px)', transition: 'padding-bottom 0.18s ease-out' }}>
+        {/* keyboard-inset：键盘弹起时把整列内容抬到键盘上方，避免浏览器把界面整体顶飞
+            （Chrome 等浏览器未生效 interactive-widget=resizes-content 时的兜底） */}
       {/* top channel bar */}
       <div className="relative px-5" style={{ paddingTop: 'max(2.25rem, var(--safe-top))' }}>
         <div className="absolute left-5 leading-tight" style={{ top: 'max(2.25rem, var(--safe-top))' }}>
