@@ -2,54 +2,8 @@
 import { CharacterProfile, UserProfile, DailySchedule, ScheduleSlot, Message } from '../types';
 import { ContextBuilder } from './context';
 import { DB } from './db';
-import { safeResponseJson } from './safeApi';
+import { safeResponseJson, extractContent, extractJson } from './safeApi';
 import { injectMemoryPalace } from './memoryPalace/pipeline';
-
-/**
- * Attempt to repair truncated JSON from LLM output.
- * Handles common cases: unterminated strings, missing closing brackets.
- */
-function repairTruncatedJson(raw: string): string {
-  let s = raw.trim();
-
-  // Strip trailing comma
-  s = s.replace(/,\s*$/, '');
-
-  // Close any unterminated string: count unescaped quotes.
-  // 不用后行断言 /(?<!\\)"/: iOS Safari <16.4 的 JSC 不支持, 旧设备 new RegExp 会抛
-  // "invalid group specifier name". 改成扫描器: 数每个 " 前连续反斜杠, 偶数(含0)才算未转义。
-  // 顺带修了旧写法的 bug —— 旧的把 \\" (转义反斜杠 + 真引号) 误判成已转义 (见 lookbehindFree.test.ts)。
-  let unescapedQuoteCount = 0;
-  for (let i = 0; i < s.length; i++) {
-    if (s[i] !== '"') continue;
-    let backslashes = 0;
-    for (let j = i - 1; j >= 0 && s[j] === '\\'; j--) backslashes++;
-    if (backslashes % 2 === 0) unescapedQuoteCount++;
-  }
-  if (unescapedQuoteCount % 2 !== 0) {
-    s += '"';
-  }
-
-  // If we're inside an object value that got cut, close the object/array chain
-  // Count open vs close brackets
-  let braces = 0;
-  let brackets = 0;
-  for (const ch of s) {
-    if (ch === '{') braces++;
-    else if (ch === '}') braces--;
-    else if (ch === '[') brackets++;
-    else if (ch === ']') brackets--;
-  }
-
-  // Strip trailing comma again after quote repair
-  s = s.replace(/,\s*$/, '');
-
-  // Close brackets/braces
-  while (brackets > 0) { s += ']'; brackets--; }
-  while (braces > 0) { s += '}'; braces--; }
-
-  return s;
-}
 
 interface ApiConfig {
     baseUrl: string;
@@ -356,16 +310,14 @@ export async function generateDailyScheduleForChar(
         }
 
         const data = await safeResponseJson(response);
-        let content = data.choices?.[0]?.message?.content || '';
-        content = content.replace(/```json/g, '').replace(/```/g, '').trim();
-
-        let parsed: any;
-        try {
-          parsed = JSON.parse(content);
-        } catch {
-          // LLM output may be truncated — attempt repair
-          const repaired = repairTruncatedJson(content);
-          parsed = JSON.parse(repaired);
+        // 与主链路对齐：extractContent 会剥掉思维链模型(<think>...)并回落 reasoning_content，
+        // extractJson 负责去围栏 / 从 prose 里抽 {...} / 修截断 + 尾逗号等多重兜底。
+        // 之前这里手搓 JSON.parse，碰到推理模型的 <think> 前缀会在 "line 1 column 1" 直接炸。
+        const content = extractContent(data);
+        const parsed = extractJson(content);
+        if (!parsed) {
+            console.error('[Schedule] Generation failed: 无法从模型输出解析出JSON:', content.slice(0, 200));
+            return null;
         }
         const slots: ScheduleSlot[] = (parsed.slots || []).map((s: any) => ({
             startTime: s.startTime || '00:00',
@@ -496,9 +448,8 @@ ${chatSummary}
         }
 
         const data = await safeResponseJson(response);
-        let content = data.choices?.[0]?.message?.content || '';
-        // 清理可能的引号包裹
-        content = content.trim().replace(/^["']|["']$/g, '').trim();
+        // extractContent 已剥思维链 + 回落 reasoning_content + trim；这里只再去掉外层引号包裹
+        let content = extractContent(data).replace(/^["']|["']$/g, '').trim();
 
         if (content.length < 10) return null;
 
