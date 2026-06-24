@@ -11,6 +11,7 @@ import type {
     EventBox,
 } from './types';
 import { bm25Index } from './bm25Index';
+import type { VectorIndexEntry as VectorBackupIndexEntry } from '../backupFormat';
 
 // ─── Store 名称常量 ────────────────────────────────────
 
@@ -202,6 +203,39 @@ export function ensureFloat32(vec: number[] | Float32Array | Uint8Array): Float3
     }
     // 旧 number[] 路径
     return new Float32Array(vec);
+}
+
+/**
+ * 把 memory_vectors 的原始记录归一化成「Float32 原始字节拼成的一根 bin + 索引」，供 v2 备份的
+ * 向量二进制旁路使用（见 utils/backupFormat.ts）。vector 可能是 Uint8Array（已迁移）/ Float32Array /
+ * 遗留 number[]，必须先过 ensureFloat32 统一——遗留 number[] 不归一化直接当字节读会写出无效数据（R4·F4）。
+ * dimensions 用实际 f32 长度，钉死 byteLength === dimensions*4 不变量（导入端据此校验）。
+ */
+export function encodeVectorsForBackup(
+    rawVectors: Array<{ memoryId?: string; charId?: string; dimensions?: number; model?: string; vector?: unknown }>,
+): { bin: Uint8Array; index: VectorBackupIndexEntry[] } {
+    const index: VectorBackupIndexEntry[] = [];
+    const parts: Uint8Array[] = [];
+    let offset = 0;
+    for (const v of rawVectors) {
+        if (!v || !v.vector || !v.memoryId) continue;
+        const f32 = ensureFloat32(v.vector as number[] | Float32Array | Uint8Array);
+        const bytes = new Uint8Array(f32.buffer, f32.byteOffset, f32.byteLength);
+        parts.push(bytes);
+        index.push({
+            memoryId: v.memoryId,
+            charId: (v.charId ?? '') as string,
+            dimensions: f32.length,
+            model: v.model,
+            byteOffset: offset,
+            byteLength: bytes.byteLength,
+        });
+        offset += bytes.byteLength;
+    }
+    const bin = new Uint8Array(offset);
+    let p = 0;
+    for (const part of parts) { bin.set(part, p); p += part.byteLength; }
+    return { bin, index };
 }
 
 /** 编码为 IndexedDB 存储形态（Uint8Array of Float32 raw bytes） */

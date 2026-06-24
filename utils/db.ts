@@ -2185,6 +2185,65 @@ export const DB = {
       });
   },
 
+  /**
+   * 游标分批读整表：每攒够 batchSize 条回调一次 onBatch(batch)，回调内消费完即释放，
+   * 绝不像 getRawStoreData 那样把整表一次性 getAll 进内存。导出大 store 时用它，把读取
+   * 峰值从「整个 store」降到「一个 batch」。
+   *
+   * 实现要点——每批一个独立 readonly 事务，按主键升序续读（顺序与 getAll 完全一致）：
+   * IDB 事务在控制权回到事件循环、且没有挂起请求时会自动提交关闭。onBatch 可能是 async
+   * （要 await 写分片 / 让出主线程），await 必然跨过这个提交点把事务关掉，之后再 cursor
+   * .continue() 就会抛 TransactionInactiveError。所以这里先在一个事务内用游标攒满一批、
+   * 让事务自然关闭，await onBatch 消费完，再用 lowerBound(lastKey, true) 开下一个事务从
+   * 断点续读。这是 memoryPalace/db.ts 的 scanAndMigrateLegacy 同款分批事务做法。
+   *
+   * ⚠ 一致性语义（接进导出前必读）：分批跨多个事务 ≠ getAll 的单事务快照。store 静止时
+   * 两者结果一致；但若批次之间有并发写入，key 大于断点的新记录会被带进来、已扫过 key 上的
+   * 增删改会漏掉或读到陈旧值——拼出来的可能是内部不一致的 store。getRawStoreData 的单次
+   * getAll 至少是「每个 store 自带一致快照」。所以把本函数接进备份导出时，必须先保证导出
+   * 期间 store 静止（暂停写入 / 加导出锁），否则要接受「活动中导出 = 尽力而为快照」并补一条
+   * 批间改动的回归测试。当前备份导出仍走 getRawStoreData，未用本函数，此约束留给后续接入时兑现。
+   */
+  getStoreDataChunked: async (
+      storeName: string,
+      onBatch: (batch: any[]) => void | Promise<void>,
+      batchSize = 200,
+  ): Promise<void> => {
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(storeName)) return;
+
+      let lastKey: IDBValidKey | null = null;
+      for (;;) {
+          const { batch, newLastKey, done } = await new Promise<{
+              batch: any[]; newLastKey: IDBValidKey | null; done: boolean;
+          }>((resolve, reject) => {
+              const tx = db.transaction(storeName, 'readonly');
+              const store = tx.objectStore(storeName);
+              const range = lastKey !== null ? IDBKeyRange.lowerBound(lastKey, true) : undefined;
+              const req = store.openCursor(range);
+              const collected: any[] = [];
+              let bLast: IDBValidKey | null = lastKey;
+              let bDone = false;
+              req.onsuccess = () => {
+                  const cursor = req.result;
+                  if (!cursor) { bDone = true; return; } // 走到末尾
+                  if (collected.length >= batchSize) return; // 攒够这批，停 continue 等事务关闭
+                  collected.push(cursor.value);
+                  bLast = cursor.primaryKey;
+                  cursor.continue();
+              };
+              req.onerror = () => reject(req.error);
+              tx.oncomplete = () => resolve({ batch: collected, newLastKey: bLast, done: bDone });
+              tx.onerror = () => reject(tx.error || new Error('getStoreDataChunked tx failed'));
+              tx.onabort = () => reject(tx.error || new Error('getStoreDataChunked tx aborted'));
+          });
+
+          if (batch.length > 0) await onBatch(batch);
+          lastKey = newLastKey;
+          if (done) break;
+      }
+  },
+
   exportFullData: async (): Promise<Partial<FullBackupData>> => {
       const db = await openDB();
       

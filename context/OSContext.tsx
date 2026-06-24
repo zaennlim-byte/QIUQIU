@@ -3,6 +3,8 @@ import React, { createContext, useContext, useEffect, useState, useRef, useCallb
 import { APIConfig, AppID, OSTheme, VirtualTime, CharacterProfile, ChatTheme, Toast, FullBackupData, UserProfile, ApiPreset, GroupProfile, SystemLog, Worldbook, NovelBook, SongSheet, Message, RealtimeConfig, AppearancePreset, CloudBackupConfig, CloudBackupFile } from '../types';
 import { DB } from '../utils/db';
 import { extractImagesInPlace, deepCloneForExport } from '../utils/backupExport';
+import { writeV2Backup, assembleV2Backup, type BackupManifest, type ZipFileWriter, type ZipFileReader } from '../utils/backupFormat';
+import { encodeVectorsForBackup } from '../utils/memoryPalace/db';
 import { ProactiveChat } from '../utils/proactiveChat';
 import { VRScheduler } from '../utils/vrWorld/scheduler';
 import { runVRSession } from '../utils/vrWorld/runSession';
@@ -42,14 +44,15 @@ const normalizeProactiveAiContent = (raw: string): string => {
 
 
 type JSZipFileLike = {
-  async: (type: 'string' | 'base64') => Promise<string>;
+  async(type: 'string' | 'base64'): Promise<string>;
+  async(type: 'uint8array'): Promise<Uint8Array>;
 };
 
 type JSZipLike = {
   folder: (name: string) => { file: (name: string, data: string, options?: { base64?: boolean }) => void } | null;
   file: {
     (name: string): JSZipFileLike | null;
-    (name: string, data: string, options?: { base64?: boolean }): void;
+    (name: string, data: string | Uint8Array, options?: { base64?: boolean }): void;
   };
   generateAsync: (
     options: {
@@ -2832,6 +2835,11 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               return result;
           };
 
+          // 向量二进制旁路（#2）：memory_vectors 归一化拼成 bin + 索引（逻辑在 encodeVectorsForBackup，
+          // 那边有 ensureFloat32 统一 Uint8Array / Float32Array / 遗留 number[] 三态），导出收尾交给
+          // writeV2Backup 落进 zip——不进 backupData、不当普通数组分片，避开 number[] 进 JSON 的膨胀。
+          let vectorPayload: ReturnType<typeof encodeVectorsForBackup> | undefined;
+
           for (const storeName of storesToProcess) {
               currentStep++;
               setSysOperation({
@@ -2843,6 +2851,14 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               let rawData = await DB.getRawStoreData(storeName);
               let processedData: any;
 
+              // 向量旁路：归一化拼 bin + 索引，不进 backupData（writeV2Backup 收尾落 zip）。直接跳过
+              // 下面的图片处理 / switch（向量无图、无 image base64）。
+              if (storeName === 'memory_vectors') {
+                  vectorPayload = encodeVectorsForBackup(Array.isArray(rawData) ? rawData : []);
+                  await new Promise(resolve => setTimeout(resolve, 10));
+                  continue;
+              }
+
               // --- MODE SPECIFIC FILTERING ---
 
               if (storeName === 'assets' && Array.isArray(rawData)) {
@@ -2853,29 +2869,9 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               }
 
               // Fast path: stores with no image data skip expensive recursive traversal
+              // （memory_vectors 已在上面走二进制旁路 continue 掉，这里只剩其它无图 store）
               if (noImageStores.has(storeName)) {
-                  if (storeName === 'memory_vectors' && Array.isArray(rawData)) {
-                      // 向量在 IndexedDB 里是 Uint8Array（Float32 原始字节）或老
-                      // number[]，JSON.stringify 没法序列化 Uint8Array（结果是 {}）
-                      // 所以这里统一解码成 plain number[]，让备份能 JSON 圆规一周。
-                      // 重做时 MemoryVectorDB.saveMany 会把 number[] 重新压回
-                      // Uint8Array，磁盘还是省的。
-                      processedData = rawData.map((v: any) => {
-                          if (!v || !v.vector) return v;
-                          let arr: number[];
-                          if (v.vector instanceof Uint8Array) {
-                              const f32 = new Float32Array(v.vector.buffer, v.vector.byteOffset, v.vector.byteLength >>> 2);
-                              arr = Array.from(f32);
-                          } else if (v.vector instanceof Float32Array) {
-                              arr = Array.from(v.vector);
-                          } else {
-                              arr = v.vector;
-                          }
-                          return { ...v, vector: arr };
-                      });
-                  } else {
-                      processedData = rawData;
-                  }
+                  processedData = rawData;
               } else if (mode === 'text_only') {
                   processedData = Array.isArray(rawData) && rawData.length > 200
                       ? await processArrayChunked(rawData, stripBase64)
@@ -2970,7 +2966,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   case 'tracker_entries': backupData.trackerEntries = processedData; break;
                   case 'hotnews_snapshots': backupData.hotNewsSnapshots = processedData; break;
                   case 'memory_nodes': backupData.memoryNodes = processedData; break;
-                  case 'memory_vectors': backupData.memoryVectors = processedData; break;
+                  // memory_vectors 走二进制旁路（上面已 continue），不在此 switch 落 backupData
                   case 'memory_links': backupData.memoryLinks = processedData; break;
                   case 'topic_boxes': backupData.topicBoxes = processedData; break;
                   case 'anticipations': backupData.anticipations = processedData; break;
@@ -3003,50 +2999,23 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           // 卡在 95% 干等。level 9 压几十 MB 数据可能要好几秒。
           setSysOperation({ status: 'processing', message: '正在生成压缩包（最高压缩级别）...', progress: 70 });
 
-          // --- MEMORY-OPTIMIZED INCREMENTAL SERIALIZATION ---
-          // Instead of JSON.stringify(entire backupData) which doubles peak memory,
-          // we serialize large arrays separately and build the JSON incrementally.
-          const largeArrayKeys = ['characters', 'messages', 'assets', 'galleryImages',
-              'savedEmojis', 'memoryNodes', 'memoryVectors', 'memoryLinks',
-              'socialPosts', 'diaries', 'worldbooks', 'novels', 'xhsActivities',
-              'bankTransactions', 'quizSessions', 'guidebookSessions',
-              'topicBoxes', 'anticipations', 'eventBoxes', 'roomCustomAssets', 'mediaAssets',
-              'customThemes', 'appearancePresets', 'courses', 'games', 'songs',
-              'roomTodos', 'roomNotes', 'tasks', 'anniversaries', 'groups',
-              'savedJournalStickers', 'emojiCategories', 'xhsStockImages',
-              'scheduledMessages', 'handbooks', 'trackers', 'trackerEntries', 'hotNewsSnapshots',
-              'dailySchedules', 'memoryBatches', 'pixelHomeAssets', 'pixelHomeLayouts',
-              'worldEpisodes'] as const;
-
-          // Build metadata (small fields) separately
-          const metadata: Record<string, any> = {};
-          const largeKeySet = new Set(largeArrayKeys as readonly string[]);
-          for (const key of Object.keys(backupData)) {
-              if (!largeKeySet.has(key)) {
-                  metadata[key] = (backupData as any)[key];
-              }
-          }
-
-          // Build JSON string incrementally: "{metadata..., largeKey1:[...], largeKey2:[...]}"
-          const metaStr = JSON.stringify(metadata);
-          const jsonParts: string[] = [metaStr.slice(0, -1)]; // Remove trailing '}'
-
-          let addedLarge = false;
-          for (const key of largeArrayKeys) {
-              const value = (backupData as any)[key];
-              if (value === undefined || value === null) continue;
-              jsonParts.push(`${addedLarge || metaStr.length > 2 ? ',' : ''}"${key}":${JSON.stringify(value)}`);
-              addedLarge = true;
-              // Release reference immediately to allow GC
-              (backupData as any)[key] = undefined;
-              // Yield to let GC run
-              await new Promise(r => setTimeout(r, 0));
-          }
-          jsonParts.push('}');
-
-          zip.file("data.json", jsonParts.join(''));
-          // Release parts
-          jsonParts.length = 0;
+          // --- v2 分片序列化（替代老的单根 data.json）---
+          // 不再把所有数据拼成一根 data.json：单根字符串逼近 ~512M 会确定性 RangeError。
+          // 改成每个数组字段分片写进 stores/<field>.NNN.json、其余非数组字段进 metadata.json、
+          // 收尾写 manifest.json 当导入契约。导入端按 manifest 把各片拼回与这里完全相同的 data
+          // 对象，喂给原封不动的 importFullData——还原语义（clear-and-add / merge / 单例 /
+          // media_only 补丁……）不在这里重写。详见 utils/backupFormat.ts。
+          await writeV2Backup(
+              zip as unknown as ZipFileWriter,
+              backupData as Record<string, any>,
+              {
+                  mode,
+                  createdAt: Date.now(),
+                  assetCount,
+                  vectors: vectorPayload,
+                  onYield: () => new Promise<void>(r => setTimeout(r, 0)),
+              },
+          );
 
           // 进度提示：每 ~5% 更新一次（避免高频 React 重渲染），同时让进度
           // 条从 70% 平滑爬到 99%，用户能确切看到"在动"。
@@ -3160,12 +3129,37 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   const JSZip = await loadJSZip();
                   const loadedZip = await JSZip.loadAsync(fileOrJson);
                   zip = loadedZip;
-                  const dataFile = loadedZip.file("data.json");
-                  if (!dataFile) throw new Error("损坏的备份包: 缺少 data.json");
-                  let jsonStr = await dataFile.async("string");
                   totalAssetFiles = countZipAssetFiles(loadedZip);
-                  data = JSON.parse(jsonStr);
-                  jsonStr = '';
+                  const manifestFile = loadedZip.file("manifest.json");
+                  if (manifestFile) {
+                      // v2：manifest 驱动的分片备份。assembleV2Backup 只读 zip、组装内存对象，
+                      // 校验不过直接抛错——此时 importFullData 还没调，DB 一字未动。
+                      let manifest: BackupManifest;
+                      try {
+                          manifest = JSON.parse(await manifestFile.async("string"));
+                      } catch {
+                          throw new Error("损坏的备份包：manifest.json 解析失败");
+                      }
+                      data = await assembleV2Backup(
+                          loadedZip as unknown as ZipFileReader,
+                          manifest,
+                          {
+                              onYield: () => new Promise<void>(r => setTimeout(r, 0)),
+                              onShardProgress: (field, idx, total) => {
+                                  showImportProgress('parsing', '正在解析备份分片...',
+                                      5 + Math.floor((idx / Math.max(1, total)) * 25),
+                                      { current: `分片 ${field}` });
+                              },
+                          },
+                      ) as FullBackupData;
+                  } else {
+                      // v1（老备份）：单根 data.json，原样保留，老备份永远打得开。
+                      const dataFile = loadedZip.file("data.json");
+                      if (!dataFile) throw new Error("损坏的备份包: 缺少 data.json");
+                      let jsonStr = await dataFile.async("string");
+                      data = JSON.parse(jsonStr);
+                      jsonStr = '';
+                  }
               }
           }
 
