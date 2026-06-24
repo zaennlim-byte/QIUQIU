@@ -13,7 +13,7 @@ import React, {
 } from 'react';
 import { cachedCall as _cachedCall, invalidate as _invalidateCache, clearAll as _clearAllCache } from '../utils/musicCache';
 import { DB } from '../utils/db';
-import { getProxyWorkerUrl, DEFAULT_PROXY_WORKER } from '../utils/proxyWorker';
+import { getProxyWorkerUrl, DEFAULT_PROXY_WORKER, PROXY_WORKER_CHANGED_EVENT } from '../utils/proxyWorker';
 import type { PostProcessMusicHooks } from '../utils/applyAssistantPostProcessing';
 
 /* ───────────── 类型 ───────────── */
@@ -364,6 +364,20 @@ export const MusicProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return next;
     });
     saveCfg(next);
+  }, []);
+
+  // 中心配置（设置 → 自定义网络代理）变了 → 重读音乐 cfg，让"跟随中心"的地址实时切过去。
+  // 音乐 cfg 是挂载时快照进 state 的，不重读就只能等下次刷新页面；地址真的变了才清缓存重拉。
+  useEffect(() => {
+    const onProxyChanged = () => {
+      setCfgState(prev => {
+        const next = loadCfg();
+        if (next.workerUrl !== prev.workerUrl) _clearAllCache();
+        return next;
+      });
+    };
+    window.addEventListener(PROXY_WORKER_CHANGED_EVENT, onProxyChanged);
+    return () => window.removeEventListener(PROXY_WORKER_CHANGED_EVENT, onProxyChanged);
   }, []);
 
   const initialState = useMemo(loadState, []);

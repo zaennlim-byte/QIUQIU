@@ -49,18 +49,36 @@ export const getProxyWorkerUrl = (): string => {
 /**
  * 写入自定义 worker 地址。传空、或传的就是默认地址 → 清掉本地存储（回到默认）。
  * 非法地址（不以 http(s):// 开头）直接忽略，由调用方负责校验提示。
+ * 写入成功后广播一个自定义事件，让"启动时快照配置"的消费者（如音乐播放器）能实时跟随。
  */
 export const setProxyWorkerUrl = (url: string): void => {
   try {
     const trimmed = normalize(url || '');
     if (!trimmed || trimmed === DEFAULT_PROXY_WORKER) {
       localStorage.removeItem(LS_KEY);
+      notifyProxyWorkerChanged();
       return;
     }
     if (!/^https?:\/\//i.test(trimmed)) return;
     localStorage.setItem(LS_KEY, trimmed);
+    notifyProxyWorkerChanged();
   } catch {
     /* localStorage 不可用就当默认处理 */
+  }
+};
+
+/**
+ * 中心 Worker 地址变更事件。同一标签页内改 localStorage 不会触发原生 'storage' 事件，
+ * 所以用这个自定义事件通知那些"只在挂载时读一次配置"的模块（目前是音乐播放器）实时刷新。
+ */
+export const PROXY_WORKER_CHANGED_EVENT = 'sully:proxy-worker-changed';
+const notifyProxyWorkerChanged = (): void => {
+  try {
+    if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+      window.dispatchEvent(new Event(PROXY_WORKER_CHANGED_EVENT));
+    }
+  } catch {
+    /* 非浏览器环境（测试 / SSR）忽略 */
   }
 };
 
