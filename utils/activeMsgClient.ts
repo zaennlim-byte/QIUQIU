@@ -250,8 +250,13 @@ const buildCompletePrompt = async (
   const { recentMessages, timeSinceUser } = await buildTimeGapHint(char.id);
   const currentTime = nowIsoLocal().replace('T', ' ');
   const legacyHint = buildLegacyStyleProactiveHint(userProfile.name || '对方', currentTime, timeSinceUser);
-  const emojis = await DB.getEmojis();
-  const categories = await DB.getEmojiCategories();
+  // 按角色可见性过滤表情包：主动消息不经过 Chat.tsx 的 aiVisibleEmojis/visibleCategories，
+  // 必须在这里复用同一套过滤，否则角色会用到只对其他角色开放的表情包。
+  const { emojis, categories } = ChatPrompts.filterVisibleEmojis(
+    await DB.getEmojis(),
+    await DB.getEmojiCategories(),
+    char.id,
+  );
   const systemPrompt = await ChatPrompts.buildSystemPrompt(
     char,
     userProfile,
