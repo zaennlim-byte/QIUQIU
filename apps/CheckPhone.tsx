@@ -18,7 +18,7 @@ import {
     Plus, SignOut, CaretLeft, CaretRight, Cloud, ImagesSquare, LockSimple, Package,
     Storefront, Heart, ArrowsClockwise, Tray, DotsThree, ClockCounterClockwise, Sparkle,
     UsersThree, UserPlus, Prohibit, LinkSimple, PaperPlaneTilt, PencilSimple, Trash,
-    Robot, Brain, MaskHappy
+    Robot, Brain, MaskHappy, Question
 } from '@phosphor-icons/react';
 
 type LayoutId = NonNullable<PhoneCustomApp['layout']>;
@@ -161,6 +161,8 @@ const CheckPhone: React.FC = () => {
     const [ncLinkedId, setNcLinkedId] = useState('');
     // 改绑定弹窗（把联系人改绑到正确的真实角色 / 转为虚构）
     const [showRebindModal, setShowRebindModal] = useState(false);
+    // 「允许虚构 NPC」开关的说明展开态
+    const [showFictionHelp, setShowFictionHelp] = useState(false);
 
     // Custom App Creation State
     const [showCreateModal, setShowCreateModal] = useState(false);
@@ -1588,13 +1590,24 @@ ${layoutHint[layout || 'generic']}`;
                     right={<button onClick={() => setShowContactModal(true)} className="text-white/80 active:scale-90 transition"><UserPlus size={20} weight="bold" /></button>} />
                 {/* 约束开关：是否允许虚构 NPC */}
                 <div className="px-4 pt-1 pb-2 shrink-0">
-                    <button onClick={toggleAllowFictional}
-                        className="w-full flex items-center gap-2.5 rounded-xl px-3 py-2 bg-white/[0.04] border border-white/[0.07] active:scale-[0.99] transition">
-                        <span className="text-[11px] text-white/55 flex-1 text-left">{allowFictional ? '允许 TA 结交虚构 NPC' : '只与神经链接里的真实角色来往'}</span>
-                        <span className="relative w-9 h-5 rounded-full transition" style={{ background: allowFictional ? accent : 'rgba(255,255,255,0.15)' }}>
+                    <div className="w-full flex items-center gap-2 rounded-xl px-3 py-2 bg-white/[0.04] border border-white/[0.07]">
+                        <button onClick={toggleAllowFictional} className="flex-1 min-w-0 text-left active:scale-[0.99] transition">
+                            <span className="text-[11px] text-white/55">{allowFictional ? '允许 TA 结交虚构 NPC' : '只与神经链接里的真实角色来往'}</span>
+                        </button>
+                        <button onClick={() => setShowFictionHelp(v => !v)} aria-label="说明"
+                            className={`w-4 h-4 rounded-full flex items-center justify-center shrink-0 transition ${showFictionHelp ? 'text-white/80' : 'text-white/35 active:text-white/70'}`}>
+                            <Question size={13} weight="bold" />
+                        </button>
+                        <button onClick={toggleAllowFictional} aria-label="切换" className="relative w-9 h-5 rounded-full transition shrink-0" style={{ background: allowFictional ? accent : 'rgba(255,255,255,0.15)' }}>
                             <span className="absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all" style={{ left: allowFictional ? '18px' : '2px' }} />
-                        </span>
-                    </button>
+                        </button>
+                    </div>
+                    {showFictionHelp && (
+                        <div className="mt-1.5 rounded-xl px-3 py-2.5 bg-white/[0.03] border border-white/[0.06] text-[10.5px] text-white/55 leading-relaxed space-y-1">
+                            <p><span className="font-semibold text-white/75">开：</span>允许 TA 的通讯录里出现「按人设虚构的路人」（同事、网友、中间人之类，神经链接里并不存在的人）。社交圈更丰满。</p>
+                            <p><span className="font-semibold text-white/75">关：</span>TA 只和神经链接里<span className="text-white/75">真实存在的角色</span>来往；扫描/生成时会丢弃所有虚构联系人。</p>
+                        </div>
+                    )}
                     {/* 旧版 Message 聊天归档：废弃 App，收在这里做不起眼的入口 */}
                     <button onClick={openChat}
                         className="w-full flex items-center gap-2 mt-1.5 px-3 py-1.5 text-white/35 active:text-white/60 transition">
