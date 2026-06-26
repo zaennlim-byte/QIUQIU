@@ -1904,34 +1904,52 @@ const MessageItem = React.memo(({
         const t: any = tMeta.theater || {};
         const lines: any[] = Array.isArray(t.lines) ? t.lines : [];
         const timeStr = new Date(m.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
-        const accent = '#f0ab9c';
+        const HUE = 262;
+        const accent = `hsl(${HUE},75%,72%)`;
+        // 由该时段起始时间，给每一拍合成「行为轨迹」时间戳（HH:MM:SS），与窥视面板一致。
+        const beatClock = (idx: number): string => {
+            const [h, mm] = String(tMeta.slotTime || '00:00').split(':').map((n: string) => parseInt(n, 10));
+            const base = (Number.isFinite(h) ? h : 0) * 3600 + (Number.isFinite(mm) ? mm : 0) * 60 + idx * 17;
+            const pad = (n: number) => String(n).padStart(2, '0');
+            return `${pad(Math.floor(base / 3600) % 24)}:${pad(Math.floor((base % 3600) / 60))}:${pad(base % 60)}`;
+        };
         const card = (
             <div className="w-64">
-                <div className="relative rounded-2xl overflow-hidden border shadow-[0_8px_28px_rgba(50,25,30,0.45)]"
-                    style={{ borderColor: 'rgba(240,171,156,0.3)', background: 'linear-gradient(160deg,#2a1820 0%,#1d1219 55%,#130c11 100%)' }}>
-                    <div className="absolute -top-7 -right-5 w-24 h-24 rounded-full pointer-events-none" style={{ background: 'radial-gradient(circle,rgba(240,171,156,.32),transparent 70%)' }} />
-                    {/* 头部 */}
-                    <div className="relative px-3 pt-2.5 pb-2 flex items-center gap-2 border-b" style={{ borderColor: 'rgba(240,171,156,0.18)' }}>
-                        <span className="text-sm leading-none" style={{ color: accent, filter: 'drop-shadow(0 1px 4px rgba(240,171,156,.5))' }}>👁</span>
+                <div className="relative rounded-2xl overflow-hidden border shadow-[0_8px_28px_rgba(30,18,48,0.5)]"
+                    style={{ borderColor: `hsla(${HUE},55%,55%,0.32)`, background: `linear-gradient(160deg,hsl(${HUE},42%,15%) 0%,hsl(${HUE},45%,9%) 58%,#0a0712 100%)` }}>
+                    <div className="absolute -top-7 -right-5 w-24 h-24 rounded-full pointer-events-none" style={{ background: `radial-gradient(circle,hsla(${HUE},70%,60%,.35),transparent 70%)` }} />
+                    <div className="absolute inset-0 pointer-events-none opacity-50" style={{ backgroundImage: 'radial-gradient(1px 1px at 22% 30%,rgba(200,180,255,.4),transparent),radial-gradient(1px 1px at 78% 18%,rgba(220,200,255,.35),transparent)' }} />
+                    {/* 头部：窥视回放 · LIVE */}
+                    <div className="relative px-3 pt-2.5 pb-2 flex items-center gap-2 border-b" style={{ borderColor: `hsla(${HUE},55%,55%,0.2)` }}>
+                        <span className="text-sm leading-none" style={{ color: accent, filter: `drop-shadow(0 1px 4px hsla(${HUE},70%,60%,.6))` }}>👁</span>
                         <div className="flex-1 min-w-0">
-                            <div className="text-[9px] tracking-[0.25em] font-bold uppercase" style={{ color: accent }}>窥视回放 · {tMeta.slotTime || ''}</div>
+                            <div className="text-[8.5px] tracking-[0.22em] font-bold uppercase flex items-center gap-1.5" style={{ color: accent }}>
+                                <span>窥视回放 · {tMeta.slotTime || ''}</span>
+                                <span className="w-1 h-1 rounded-full bg-[#ff5a78] animate-pulse" />
+                            </div>
                             <div className="text-[12px] text-white/90 font-semibold truncate">{tMeta.emoji ? `${tMeta.emoji} ` : ''}{tMeta.activity || '某个时段'}</div>
                         </div>
                         <span className="text-[9px] text-white/35">{timeStr}</span>
                     </div>
-                    {/* 正文：逐拍回放 */}
-                    <div className="relative px-3 py-2.5 max-h-52 overflow-y-auto no-scrollbar space-y-1.5">
+                    {/* 正文：逐拍回放（时间戳 + 氛围图标方块 + 文本） */}
+                    <div className="relative px-2.5 py-2.5 max-h-52 overflow-y-auto no-scrollbar space-y-1.5">
                         {lines.length > 0 ? lines.map((l: any, i: number) => (
-                            <div key={i} className="flex items-start gap-1.5">
-                                {l?.emotion && <span className="text-[11px] leading-tight flex-shrink-0 mt-0.5">{l.emotion}</span>}
-                                <p className="text-[12px] leading-[1.6] text-white/72 whitespace-pre-wrap">{l?.text || ''}</p>
+                            <div key={i} className="flex items-stretch gap-1.5">
+                                <span className="flex-shrink-0 w-[42px] pt-1 text-right text-[8px] font-mono leading-tight whitespace-nowrap text-white/28 select-none">{beatClock(i)}</span>
+                                <span
+                                    className="flex-shrink-0 self-start mt-0.5 w-5 h-5 rounded-md flex items-center justify-center text-[11px]"
+                                    style={{ background: `hsl(${HUE},40%,22%)`, border: `1px solid hsla(${HUE},55%,50%,0.3)` }}
+                                >
+                                    {l?.emotion || '·'}
+                                </span>
+                                <p className="flex-1 min-w-0 text-[12px] leading-[1.55] text-white/74 whitespace-pre-wrap break-words">{l?.text || ''}</p>
                             </div>
                         )) : (
                             <p className="text-[11px] text-white/40 italic">（这段窥视没有内容）</p>
                         )}
                     </div>
                     {/* 页脚 */}
-                    <div className="relative px-3 py-1.5 border-t flex items-center justify-between" style={{ borderColor: 'rgba(240,171,156,0.18)' }}>
+                    <div className="relative px-3 py-1.5 border-t flex items-center justify-between" style={{ borderColor: `hsla(${HUE},55%,55%,0.2)` }}>
                         <span className="text-[9px] italic text-white/35">你偷看了 TA 的这一刻</span>
                         <span className="text-[9px] font-bold tracking-wide" style={{ color: accent }}>TA 已察觉</span>
                     </div>

@@ -830,7 +830,7 @@ const ChatModals: React.FC<ChatModalsProps> = ({
 
             {/* Schedule Modal */}
             <Modal
-                isOpen={modalType === 'schedule'} title={`${activeCharacter?.name || '角色'}の日程`} onClose={() => setModalType('none')}
+                isOpen={modalType === 'schedule'} title={`${activeCharacter?.name || '角色'}の日程/情绪`} onClose={() => setModalType('none')}
             >
                 <div className="max-h-[70vh] overflow-y-auto -mx-2 px-2">
                     {/* 总开关：关闭时不调副 API、不生成日程、不注入情绪 buff */}
