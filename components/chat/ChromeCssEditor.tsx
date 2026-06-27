@@ -1,5 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { DB } from '../../utils/db';
+import { Capacitor } from '@capacitor/core';
+import { Directory, Encoding, Filesystem } from '@capacitor/filesystem';
+import { Share } from '@capacitor/share';
 
 // 聊天「白框」自定义 CSS 编辑器（Appearance 全局默认 与 单角色定制 共用）。
 // 选择器钩子：.sully-chat-header 顶栏 / -back 返回 / -avatar 头像 / -name 名字 / -status 状态 /
@@ -275,6 +278,7 @@ const copyText = async (text: string): Promise<boolean> => {
 const ChromeCssEditor: React.FC<{ value: string; onChange: (css: string) => void }> = ({ value, onChange }) => {
     const [copied, setCopied] = useState(false);
     const [custom, setCustom] = useState<Preset[]>([]);
+    const txtImportRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
         let alive = true;
@@ -294,6 +298,58 @@ const ChromeCssEditor: React.FC<{ value: string; onChange: (css: string) => void
         commitCustom([...custom.filter((p) => p.name !== name), { name, code: value }]);
     };
     const handleDeletePreset = (name: string) => commitCustom(custom.filter((p) => p.name !== name));
+
+    const handleTxtImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+        try {
+            const css = (await file.text()).replace(/^\uFEFF/, '');
+            if (!css.trim()) {
+                window.alert('TXT 文件内容为空。');
+                return;
+            }
+            onChange(css);
+        } catch {
+            window.alert('TXT 导入失败，请确认文件可以正常读取。');
+        } finally {
+            event.target.value = '';
+        }
+    };
+
+    const handleTxtExport = async () => {
+        if (!value.trim()) {
+            window.alert('当前没有可导出的 CSS。');
+            return;
+        }
+        const date = new Date();
+        const dateKey = `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}`;
+        const fileName = `sullyos-whitebox-${dateKey}.txt`;
+        try {
+            if (Capacitor.isNativePlatform()) {
+                await Filesystem.writeFile({
+                    path: fileName,
+                    data: value,
+                    directory: Directory.Cache,
+                    encoding: Encoding.UTF8,
+                });
+                const uri = await Filesystem.getUri({ directory: Directory.Cache, path: fileName });
+                await Share.share({ title: 'SullyOS 白框样式', files: [uri.uri] });
+                return;
+            }
+
+            const blob = new Blob([value], { type: 'text/plain;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const anchor = document.createElement('a');
+            anchor.href = url;
+            anchor.download = fileName;
+            document.body.appendChild(anchor);
+            anchor.click();
+            anchor.remove();
+            URL.revokeObjectURL(url);
+        } catch (error: any) {
+            if (error?.name !== 'AbortError') window.alert('TXT 导出失败，请重试。');
+        }
+    };
 
     const handleExport = async () => {
         if (!custom.length) { window.alert('还没有「我的预设」可导出。'); return; }
@@ -372,9 +428,14 @@ const ChromeCssEditor: React.FC<{ value: string; onChange: (css: string) => void
 
             {/* CSS 代码区 */}
             <div>
-                <div className="mb-2 flex items-center justify-between">
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                     <span className="text-[11px] font-bold text-slate-500">CSS 代码 <span className="font-normal text-slate-400">· 可手改 / 粘贴</span></span>
-                    {value && <button onClick={() => onChange('')} className="text-[10px] font-semibold text-rose-400 hover:text-rose-500">清空</button>}
+                    <div className="flex items-center gap-1">
+                        <input ref={txtImportRef} type="file" accept=".txt,text/plain" className="hidden" onChange={handleTxtImport} />
+                        <button onClick={() => txtImportRef.current?.click()} className="rounded-lg px-2 py-1 text-[10px] font-semibold text-indigo-500 hover:bg-indigo-50">导入 TXT</button>
+                        <button onClick={handleTxtExport} disabled={!value.trim()} className={`rounded-lg px-2 py-1 text-[10px] font-semibold ${value.trim() ? 'text-indigo-500 hover:bg-indigo-50' : 'text-slate-300'}`}>导出 TXT</button>
+                        {value && <button onClick={() => onChange('')} className="rounded-lg px-2 py-1 text-[10px] font-semibold text-rose-400 hover:bg-rose-50 hover:text-rose-500">清空</button>}
+                    </div>
                 </div>
                 <textarea
                     value={value}
