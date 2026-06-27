@@ -66,6 +66,21 @@ describe('relationshipChat · 纯函数', () => {
         ]);
     });
 
+    it('parseTranscript 续写可指定首行归属（修复 NPC 续写繁殖 char 的话）', () => {
+        // 无前缀续写：上一句是 host(我)→下一句轮到对方，传 false，整段归对方
+        expect(parseTranscript('收到\n好的', false)).toEqual([
+            { isMe: false, text: '收到' }, { isMe: false, text: '好的' },
+        ]);
+        // 传 true → 归我
+        expect(parseTranscript('在的\n稍等', true)).toEqual([
+            { isMe: true, text: '在的' }, { isMe: true, text: '稍等' },
+        ]);
+        // 有显式前缀时前缀优先，default 只管首行无前缀的兜底
+        expect(parseTranscript('对方: 嗯\n我: 好', true)).toEqual([
+            { isMe: false, text: '嗯' }, { isMe: true, text: '好' },
+        ]);
+    });
+
     it('parseTranscript + serializeTurns 续写无损（修复续写覆盖/吞内容）', () => {
         const detail = '我: a\nb\n对方: c';
         // 旧逻辑会丢掉无前缀的「b」，导致续写时整段替换后内容变短；现在每行都补回前缀
