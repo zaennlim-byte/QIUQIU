@@ -514,13 +514,19 @@ async function runEmotionEval(body: any): Promise<string> {
         model: ee.api.model,
         messages: evalMessages,
         temperature: 0.85,
+        // 显式给足输出额度: 部分代理不传 max_tokens 时默认很小, eval 输出很长, 会被截断成半截 JSON
+        max_tokens: 8000,
         stream: false,
       }),
     });
     let raw = '';
     if (res.ok) {
       const data: any = await res.json();
-      raw = data?.choices?.[0]?.message?.content || '';
+      // content 可能是分块数组; 个别代理把全部输出塞进 reasoning_content 而 content 留空 —
+      // 与客户端 utils/emotionApply.ts:extractAssistantText 同一套兜底 (解析容错在客户端 applyEmotionEvalRaw).
+      const msg = data?.choices?.[0]?.message;
+      raw = flattenContent(msg?.content)
+        || (typeof msg?.reasoning_content === 'string' ? msg.reasoning_content : '');
     } else {
       console.error('[emotion-eval] LLM call failed', res.status);
     }

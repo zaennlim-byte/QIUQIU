@@ -3107,13 +3107,16 @@ async function runEmotionEval(body) {
         model: ee.api.model,
         messages: evalMessages,
         temperature: 0.85,
+        // 显式给足输出额度: 部分代理不传 max_tokens 时默认很小, eval 输出很长, 会被截断成半截 JSON
+        max_tokens: 8e3,
         stream: false
       })
     });
     let raw = "";
     if (res.ok) {
       const data = await res.json();
-      raw = data?.choices?.[0]?.message?.content || "";
+      const msg = data?.choices?.[0]?.message;
+      raw = flattenContent(msg?.content) || (typeof msg?.reasoning_content === "string" ? msg.reasoning_content : "");
     } else {
       console.error("[emotion-eval] LLM call failed", res.status);
     }
