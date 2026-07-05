@@ -679,28 +679,13 @@ For each chapter, provide a title, a brief summary of what it covers, and a diff
         const chunkText = course.rawText.substring(start, start + chunkSize + 2000); // Overlap
 
         const callApi = async (personaContext: string, isFallback: boolean = false) => {
-            const prompt = `${personaContext}
+            // 【修改后】干净的 Prompt，完全由你的前台控制
+            const prompt = `
+### [书籍原始素材]
+${course.rawText}
 
-### [Current Lesson Configuration]
-Topic: "${chapter.title}"
-Difficulty: ${chapter.difficulty}
-User Preference: "${course.preference || 'Standard'}"
-
-### [Source Material]
-${chunkText.substring(0, 8000)}
-
-### [Task: Lecture Generation]
-Explain this chapter's key concepts to the user based strictly on the Source Material above.
-- **Formatting**: Use Markdown extensively.
-  - **Bold** for key terms (\`**term**\`).
-  - Lists for steps.
-  - Math: Use \`$ E=mc^2 $\` for inline math, and \`$$ E=mc^2 $$\` for block equations.
-- **Style**: ${course.preference || 'Simple, conversational, and encouraging.'}
-- **Structure**:
-  1. Intro: Friendly greeting.
-  2. Core: Explanation of concepts using analogies.
-  3. Example: A concrete example or walkthrough.
-  4. Summary: Quick recap.
+### [用户自定义陪读指令]
+${course.preference || '请开始陪读。'}
 `;
             return await fetch(`${effectiveApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
                 method: 'POST',
@@ -719,6 +704,7 @@ Explain this chapter's key concepts to the user based strictly on the Source Mat
                 })
             });
         };
+
 
         try {
             // Attempt 1: Full Character Context (The "Soul")
