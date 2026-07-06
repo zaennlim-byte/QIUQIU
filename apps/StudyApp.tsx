@@ -20,6 +20,56 @@ type KatexLike = {
 let pdfjsPromise: Promise<PdfJsLike> | null = null;
 let katexPromise: Promise<KatexLike> | null = null;
 
+// ============ 从 book.py 移植过来的分段逻辑 ============
+const SEGMENT_MAX_CHARS = 4000;
+
+interface SegmentMeta {
+    start: number;
+    end: number;
+    charCount: number;
+}
+
+function splitIntoParagraphs(text: string): string[] {
+    const rawParas = text.split(/\n\s*\n/).filter(p => p.trim().length > 10);
+    if (rawParas.length < 2) {
+        return text.split(/(?<=[。！？.!?])\s+/).filter(s => s.trim().length > 5);
+    }
+    return rawParas;
+}
+
+function computeSegments(paragraphs: string[]): SegmentMeta[] {
+    const segments: SegmentMeta[] = [];
+    let start = 0;
+    let charCount = 0;
+    
+    for (let i = 0; i < paragraphs.length; i++) {
+        charCount += paragraphs[i].length;
+        const isLast = i === paragraphs.length - 1;
+        if (charCount >= SEGMENT_MAX_CHARS || isLast) {
+            segments.push({ start, end: i, charCount });
+            start = i + 1;
+            charCount = 0;
+        }
+    }
+    
+    if (segments.length >= 2 && segments[segments.length - 1].charCount < 300) {
+        const last = segments.pop()!;
+        const prev = segments[segments.length - 1];
+        prev.end = last.end;
+        prev.charCount += last.charCount;
+    }
+    
+    return segments;
+}
+
+function buildNumberedText(paragraphs: string[], start: number, end: number): string {
+    return paragraphs
+        .slice(start, end + 1)
+        .map((p, idx) => `【P${start + idx}】${p.trim()}`)
+        .join('\n\n');
+}
+// ============ 分段逻辑结束 ============
+
 const loadScript = (src: string): Promise<void> => new Promise((resolve, reject) => {
     const existing = document.querySelector(`script[data-src="${src}"]`) as HTMLScriptElement | null;
     if (existing) {
@@ -69,7 +119,6 @@ const loadKatex = async (): Promise<KatexLike> => {
     return katexPromise;
 };
 
-// --- Styles ---
 const GRADIENTS = [
     'linear-gradient(135deg, #e0c3fc 0%, #8ec5fc 100%)',
     'linear-gradient(120deg, #f093fb 0%, #f5576c 100%)',
@@ -79,16 +128,14 @@ const GRADIENTS = [
     'linear-gradient(to right, #43e97b 0%, #38f9d7 100%)'
 ];
 
-// --- Renderer Component ---
-// [修改] 浅色护眼主题 + 灰蓝批注块
+// ============================================================
+// BlackboardRenderer - 浅色护眼 + 灰蓝批注
+// ============================================================
 const BlackboardRenderer: React.FC<{ text: string, isTyping?: boolean, katexRenderer?: { renderToString: (latex: string, options: any) => string } | null }> = ({ text, isTyping, katexRenderer }) => {
     
     const renderMath = (latex: string, displayMode: boolean) => {
         try {
-            const cleanLatex = latex
-                .replace(/\\\[/g, '')
-                .replace(/\\\]/g, '');
-
+            const cleanLatex = latex.replace(/\\\[/g, '').replace(/\\\]/g, '');
             const html = katexRenderer?.renderToString(cleanLatex, {
                 displayMode: displayMode,
                 throwOnError: false, 
@@ -105,21 +152,17 @@ const BlackboardRenderer: React.FC<{ text: string, isTyping?: boolean, katexRend
 
     const parseInline = (line: string): React.ReactNode[] => {
         const tokenRegex = /(\$[^$]+?\$|\*\*[^*]+?\*\*|\*[^*]+?\*|`[^`]+?`)/g;
-        
         return line.split(tokenRegex).map((part, i) => {
             if (part.startsWith('$') && part.endsWith('$')) {
                 return <span key={i}>{renderMath(part.slice(1, -1), false)}</span>;
             }
             if (part.startsWith('**') && part.endsWith('**')) {
-                // [修改] emerald-300 → blue-700
                 return <strong key={i} className="text-blue-700 font-bold mx-0.5">{part.slice(2, -2)}</strong>;
             }
             if (part.startsWith('*') && part.endsWith('*')) {
-                // [修改] emerald-200/80 → blue-600/80
                 return <em key={i} className="text-blue-600/80 italic">{part.slice(1, -1)}</em>;
             }
             if (part.startsWith('`') && part.endsWith('`')) {
-                // [修改] 浅色代码块
                 return <code key={i} className="bg-slate-100 text-slate-800 px-1.5 py-0.5 rounded font-mono text-xs mx-0.5 border border-slate-200/50">{part.slice(1, -1)}</code>;
             }
             return <span key={i}>{part}</span>;
@@ -143,7 +186,6 @@ const BlackboardRenderer: React.FC<{ text: string, isTyping?: boolean, katexRend
         const codeMatch = trimmed.match(/^__BLOCK_CODE_(\d+)__$/);
         if (codeMatch) {
             const id = parseInt(codeMatch[1]);
-            // [修改] 浅色代码块
             return (
                 <pre key={index} className="bg-slate-100 p-4 rounded-xl font-mono text-xs text-slate-800 my-4 overflow-x-auto border border-slate-200/50 shadow-inner whitespace-pre-wrap leading-relaxed">
                     {storedCode[id]}
@@ -151,12 +193,11 @@ const BlackboardRenderer: React.FC<{ text: string, isTyping?: boolean, katexRend
             );
         }
 
-        // [修改] 标题改为深色
         if (trimmed.startsWith('# ')) return <h1 key={index} className="text-3xl font-bold text-slate-900 mt-8 mb-6 pb-2 border-b-2 border-slate-200/50 font-serif">{trimmed.slice(2)}</h1>;
         if (trimmed.startsWith('## ')) return <h2 key={index} className="text-2xl font-bold text-slate-800 mt-6 mb-4 font-serif">{trimmed.slice(3)}</h2>;
         if (trimmed.startsWith('### ')) return <h3 key={index} className="text-xl font-bold text-slate-700 mt-5 mb-2 font-serif">{trimmed.slice(4)}</h3>;
 
-        // [修改] 引用块 → 灰蓝批注风格
+        // 灰蓝批注块
         if (trimmed.startsWith('> ')) {
             return (
                 <div key={index} className="border-l-4 border-blue-400 bg-blue-50/80 p-4 my-3 rounded-r-xl text-slate-700 italic shadow-sm">
@@ -184,7 +225,6 @@ const BlackboardRenderer: React.FC<{ text: string, isTyping?: boolean, katexRend
             );
         }
 
-        // [修改] 标准段落 → 深色文字
         return (
             <div key={index} className="text-slate-800 text-lg font-medium leading-loose tracking-wide font-serif mb-4 text-justify">
                 {parseInline(block)}
@@ -204,12 +244,7 @@ const BlackboardRenderer: React.FC<{ text: string, isTyping?: boolean, katexRend
         return segments.every(seg => /^:?-{3,}:?$/.test(seg));
     };
 
-    const splitTableCells = (line: string) => line
-        .trim()
-        .replace(/^\|/, '')
-        .replace(/\|$/, '')
-        .split('|')
-        .map(cell => cell.trim());
+    const splitTableCells = (line: string) => line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map(cell => cell.trim());
 
     const renderTable = (rows: string[], index: number) => {
         if (rows.length < 2) return renderBlock(rows[0], index, storedMath, storedCode);
@@ -283,7 +318,6 @@ const BlackboardRenderer: React.FC<{ text: string, isTyping?: boolean, katexRend
     
     return (
         <div className="space-y-1">
-            {/* [修改] KaTeX 颜色强制深色 */}
             <style>{`
                 .katex { color: #1e293b !important; } 
                 .katex-display { margin: 0.5em 0; }
@@ -300,7 +334,6 @@ const BlackboardRenderer: React.FC<{ text: string, isTyping?: boolean, katexRend
         </div>
     );
 };
-
 const StudyApp: React.FC = () => {
     const { closeApp, characters, activeCharacterId, apiConfig, addToast, userProfile, updateCharacter } = useOS();
     const [mode, setMode] = useState<'bookshelf' | 'classroom' | 'quiz' | 'quiz_review' | 'practice_book'>('bookshelf');
@@ -308,7 +341,6 @@ const StudyApp: React.FC = () => {
     const [activeCourse, setActiveCourse] = useState<StudyCourse | null>(null);
     const [selectedChar, setSelectedChar] = useState<CharacterProfile | null>(null);
     
-    // Classroom State
     const [classroomState, setClassroomState] = useState<'idle' | 'teaching' | 'q_and_a' | 'finished'>('idle');
     const [currentText, setCurrentText] = useState('');
     const [displayedText, setDisplayedText] = useState('');
@@ -317,11 +349,10 @@ const StudyApp: React.FC = () => {
     const [chatHistory, setChatHistory] = useState<{role: 'user'|'assistant', content: string}[]>([]);
     const [showChapterMenu, setShowChapterMenu] = useState(false);
     const [showAssistant, setShowAssistant] = useState(true);
-    const [showQALogs, setShowQALogs] = useState(false); // [新增] 显示问答历史
+    const [showQALogs, setShowQALogs] = useState(false);
     
     const skipTypingRef = useRef(false);
 
-    // Import State
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [isProcessing, setIsProcessing] = useState(false);
     const [processStatus, setProcessStatus] = useState('');
@@ -330,14 +361,12 @@ const StudyApp: React.FC = () => {
     const [tempPdfData, setTempPdfData] = useState<{name: string, text: string} | null>(null);
     const [katexRenderer, setKatexRenderer] = useState<KatexLike | null>(null);
 
-    // Study-specific API config
     const [studyApi, setStudyApi] = useState<Partial<APIConfig>>({});
     const [showStudySettings, setShowStudySettings] = useState(false);
     const [localStudyUrl, setLocalStudyUrl] = useState('');
     const [localStudyKey, setLocalStudyKey] = useState('');
     const [localStudyModel, setLocalStudyModel] = useState('');
 
-    // Tutor prompt presets
     const [tutorPresets, setTutorPresets] = useState<StudyTutorPreset[]>([]);
     const [editingPreset, setEditingPreset] = useState<StudyTutorPreset | null>(null);
     const [presetName, setPresetName] = useState('');
@@ -351,7 +380,6 @@ const StudyApp: React.FC = () => {
 
     const [deleteTarget, setDeleteTarget] = useState<StudyCourse | null>(null);
 
-    // Quiz State
     const [quizSession, setQuizSession] = useState<QuizSession | null>(null);
     const [quizLoading, setQuizLoading] = useState<string>('');
     const [quizUserAnswers, setQuizUserAnswers] = useState<Record<string, string>>({});
@@ -392,26 +420,21 @@ const StudyApp: React.FC = () => {
     }, []);
 
     useEffect(() => {
-        if (mode === 'bookshelf') {
-            loadCourses();
-        }
+        if (mode === 'bookshelf') loadCourses();
     }, [mode]);
 
     useEffect(() => {
         if (!currentText) return;
-
         if (skipTypingRef.current) {
             setDisplayedText(currentText);
             setIsTyping(false);
             skipTypingRef.current = false;
             return;
         }
-
         setIsTyping(true);
         setDisplayedText('');
         let i = 0;
         const speed = 15;
-        
         const timer = setInterval(() => {
             const chunk = currentText.substring(0, i + speed);
             setDisplayedText(chunk);
@@ -422,7 +445,6 @@ const StudyApp: React.FC = () => {
                 setIsTyping(false);
             }
         }, 16); 
-
         return () => clearInterval(timer);
     }, [currentText]);
 
@@ -472,13 +494,14 @@ const StudyApp: React.FC = () => {
         savePresets(tutorPresets.filter(p => p.id !== id));
     };
 
-    // --- PDF Processing ---
-
+    // ============================================================
+    // PDF 导入
+    // ============================================================
     const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
         if (file.type !== 'application/pdf') {
-            addToast('请上传 PDF 文件', 'error');
+            addToast('只支持 PDF 格式', 'error');
             return;
         }
 
@@ -539,6 +562,9 @@ const StudyApp: React.FC = () => {
         }
     };
 
+    // ============================================================
+    // 生成课程大纲（带分段）
+    // ============================================================
     const generateCurriculum = async (title: string, text: string, preference: string): Promise<StudyCourse> => {
         if (!effectiveApi.apiKey) throw new Error('API Key missing');
 
@@ -578,28 +604,46 @@ For each chapter, provide a title, a brief summary of what it covers, and a diff
         const content = data.choices[0].message.content.replace(/```json/g, '').replace(/```/g, '').trim();
         const json = JSON.parse(content);
 
+        // 为每个章节计算分段
+        const totalLen = text.length;
+        const chunkSize = Math.floor(totalLen / json.chapters.length);
+
+        const chaptersWithMeta = json.chapters.map((ch: any, idx: number) => {
+            const start = idx * chunkSize;
+            const chunkText = text.substring(start, start + chunkSize + 2000);
+            const paragraphs = splitIntoParagraphs(chunkText);
+            const segmentsMeta = computeSegments(paragraphs);
+            
+            return {
+                id: `ch-${idx}`,
+                title: ch.title,
+                summary: ch.summary,
+                difficulty: ch.difficulty || 'normal',
+                isCompleted: false,
+                paragraphs: paragraphs,
+                segmentsMeta: segmentsMeta,
+                currentSegmentIndex: 0,
+                content: '',
+            };
+        });
+
         return {
             id: `course-${Date.now()}`,
             title: title,
             rawText: text,
-            chapters: json.chapters.map((c: any, i: number) => ({
-                id: `ch-${i}`,
-                title: c.title,
-                summary: c.summary,
-                difficulty: c.difficulty || 'normal',
-                isCompleted: false
-            })),
+            chapters: chaptersWithMeta,
             currentChapterIndex: 0,
             createdAt: Date.now(),
             coverStyle: GRADIENTS[Math.floor(Math.random() * GRADIENTS.length)],
             totalProgress: 0,
             preference: preference,
-            qaLogs: [] // [新增] 初始化问答记录
+            qaLogs: []
         };
     };
 
-    // --- Classroom Logic ---
-
+    // ============================================================
+    // 课堂核心逻辑
+    // ============================================================
     const startSession = (course: StudyCourse) => {
         setActiveCourse(course);
         setMode('classroom');
@@ -618,7 +662,151 @@ For each chapter, provide a title, a brief summary of what it covers, and a diff
         handleTeach(course, targetIdx);
     };
 
-    // [修改] handleTeach - 让 AI 完全听从预设 + 提高输出上限
+    // 实际执行教学（带编号原文）
+    const doTeachWithNumberedText = async (course: StudyCourse, chapterIdx: number, numberedText: string, forceRegenerate: boolean, segIdx: number) => {
+        if (!selectedChar || !effectiveApi.apiKey) return;
+        
+        const chapter = course.chapters[chapterIdx];
+
+        const userInstruction = course.preference || 
+            `请遵循以下格式：
+[1] 请完整保留原文（保留【P0】等编号标记）；
+[2] 在原文下方，开启你的深度助教模式，请对引用的原文段落进行具体的、有启发性的拆解。
+你可以引用【P0】、【P1】等编号来指代具体段落。`;
+
+        await injectMemoryPalace(selectedChar, undefined, chapter.title);
+        let baseContext = ContextBuilder.buildCoreContext(selectedChar, userProfile, true);
+
+        baseContext += `
+### [System: Study Mode Active - 原文沉浸式阅读]
+你现在是一位陪读导师。用户希望完整阅读原文，你的角色是辅助性的——在原文旁边或下方提供批注。
+
+### [最高指令（来自用户的提示词预设，请严格遵守）]
+${userInstruction}
+
+### [原文（请逐字逐句完整保留，不得删改任何一个字，保留【P】编号）]
+${numberedText}
+
+### [执行要求]
+请严格按照上述"最高指令"执行。如果指令要求"完整保留原文"，请逐字逐句输出，不得删改。在原文之后，附上你的拆解。`;
+
+        const response = await fetch(`${effectiveApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${effectiveApi.apiKey}` },
+            body: JSON.stringify({
+                model: effectiveApi.model,
+                messages: [{ role: "user", content: baseContext }],
+                temperature: 0.7,
+                max_tokens: 4000,
+                safetySettings: [
+                    { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+                    { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+                    { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+                    { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
+                ]
+            })
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('API Error:', errorText);
+            setCurrentText(`生成失败: ${response.status} ${errorText}`);
+            setClassroomState('idle');
+            return;
+        }
+
+        const data = await safeResponseJson(response);
+        let text = data.choices?.[0]?.message?.content || data.choices?.[0]?.message?.reasoning_content || "（内容为空）";
+        
+        if (!text) {
+            setCurrentText("模型返回内容为空，请重试。");
+            setClassroomState('idle');
+            return;
+        }
+
+        const updatedChapters = [...course.chapters];
+        updatedChapters[chapterIdx] = { ...chapter, content: text, currentSegmentIndex: segIdx };
+        const updatedCourse = { ...course, chapters: updatedChapters };
+        await DB.saveCourse(updatedCourse);
+        setActiveCourse(updatedCourse);
+        setCourses(prev => prev.map(c => c.id === updatedCourse.id ? updatedCourse : c));
+
+        setCurrentText(text);
+        setClassroomState('idle');
+    };
+
+    // Fallback 教学（无分段时使用）
+    const doTeach = async (course: StudyCourse, chapterIdx: number, chunkText: string, forceRegenerate: boolean) => {
+        if (!selectedChar || !effectiveApi.apiKey) return;
+        
+        const chapter = course.chapters[chapterIdx];
+
+        const userInstruction = course.preference || 
+            `请遵循以下格式：
+[1] 请完整保留原文；
+[2] 在原文下方，开启你的深度助教模式，请对引用的原文段落进行具体的、有启发性的拆解。`;
+
+        await injectMemoryPalace(selectedChar, undefined, chapter.title);
+        let baseContext = ContextBuilder.buildCoreContext(selectedChar, userProfile, true);
+
+        baseContext += `
+### [System: Study Mode Active]
+你现在是一位陪读导师。
+
+### [最高指令]
+${userInstruction}
+
+### [原文]
+${chunkText.substring(0, 4000)}
+
+### [执行要求]
+请严格按照上述"最高指令"执行。`;
+
+        const response = await fetch(`${effectiveApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${effectiveApi.apiKey}` },
+            body: JSON.stringify({
+                model: effectiveApi.model,
+                messages: [{ role: "user", content: baseContext }],
+                temperature: 0.7,
+                max_tokens: 4000,
+                safetySettings: [
+                    { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+                    { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+                    { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+                    { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
+                ]
+            })
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('API Error:', errorText);
+            setCurrentText(`生成失败: ${response.status} ${errorText}`);
+            setClassroomState('idle');
+            return;
+        }
+
+        const data = await safeResponseJson(response);
+        let text = data.choices?.[0]?.message?.content || data.choices?.[0]?.message?.reasoning_content || "（内容为空）";
+        
+        if (!text) {
+            setCurrentText("模型返回内容为空，请重试。");
+            setClassroomState('idle');
+            return;
+        }
+
+        const updatedChapters = [...course.chapters];
+        updatedChapters[chapterIdx] = { ...chapter, content: text };
+        const updatedCourse = { ...course, chapters: updatedChapters };
+        await DB.saveCourse(updatedCourse);
+        setActiveCourse(updatedCourse);
+        setCourses(prev => prev.map(c => c.id === updatedCourse.id ? updatedCourse : c));
+
+        setCurrentText(text);
+        setClassroomState('idle');
+    };
+
     const handleTeach = async (course: StudyCourse, chapterIdx: number, forceRegenerate: boolean = false) => {
         if (!selectedChar || !effectiveApi.apiKey) return;
         
@@ -635,106 +823,33 @@ For each chapter, provide a title, a brief summary of what it covers, and a diff
         setClassroomState('teaching');
         setCurrentText("正在准备教案...");
         
-        const totalLen = course.rawText.length;
-        const chunkSize = Math.floor(totalLen / course.chapters.length);
-        const start = chapterIdx * chunkSize;
-        // [修改] 从 8000 改为 12000
-        const chunkText = course.rawText.substring(start, start + chunkSize + 2000);
+        // 使用分段逻辑
+        const segIdx = chapter.currentSegmentIndex || 0;
+        const segments = chapter.segmentsMeta || [];
+        const paragraphs = chapter.paragraphs || [];
 
-        const callApi = async (personaContext: string, isFallback: boolean = false) => {
-            // [修改] 完全听从预设，代码里不写死任何角色或格式
-            const userInstruction = course.preference || 
-                `请遵循以下格式：
-[1] 请完整保留原文；
-[2] 在原文下方，开启你的深度助教模式，请对引用的原文段落进行具体的、有启发性的拆解。`;
+        if (segments.length === 0 || paragraphs.length === 0) {
+            const totalLen = course.rawText.length;
+            const chunkSize = Math.floor(totalLen / course.chapters.length);
+            const start = chapterIdx * chunkSize;
+            const chunkText = course.rawText.substring(start, start + chunkSize + 2000);
+            await doTeach(course, chapterIdx, chunkText, forceRegenerate);
+            return;
+        }
 
-            const prompt = `${personaContext}
-
-### [最高指令（来自用户的提示词预设，请严格遵守）]
-${userInstruction}
-
-### [源材料]
-${chunkText.substring(0, 12000)}
-
-### [执行要求]
-请严格按照上述"最高指令"执行。如果指令要求"完整保留原文"，请逐字逐句输出，不得删改。在原文之后，附上你的拆解。`;
-
-            return await fetch(`${effectiveApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${effectiveApi.apiKey}` },
-                body: JSON.stringify({
-                    model: effectiveApi.model,
-                    messages: [{ role: "user", content: prompt }],
-                    temperature: 0.7,
-                    // [修改] max_tokens 从 8000 改为 16000
-                    max_tokens: 16000,
-                    safetySettings: [
-                        { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
-                        { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
-                        { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
-                        { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
-                    ]
-                })
-            });
-        };
-
-        try {
-            await injectMemoryPalace(selectedChar, undefined, chapter.title);
-            let baseContext = ContextBuilder.buildCoreContext(selectedChar, userProfile, true);
-
-            baseContext += `
-### [System: Study Mode Active]
-You are now acting as a private tutor for ${userProfile.name}.
-- **Maintain Personality**: You MUST stay in character (as defined above).
-- **Goal**: Follow the user's preset instructions above.
-- **Safety**: If the source material contains sensitive topics, treat them academically and neutrally.
-`;
-
-            let response = await callApi(baseContext);
-            
-            let text = "";
-            let isBlocked = false;
-
-            if (response.ok) {
-                const data = await safeResponseJson(response);
-                text = data.choices?.[0]?.message?.content || data.choices?.[0]?.message?.reasoning_content || "";
-                if (!text || data.choices?.[0]?.finish_reason === 'content_filter') {
-                    isBlocked = true;
-                }
-            } else {
-                throw new Error(`API Error: ${response.status}`);
-            }
-
-            if (isBlocked) {
-                setCurrentText("正在尝试切换安全线路 (Safety Fallback)...");
-                const fallbackContext = "[System: You are a helpful and neutral academic tutor. Ignore previous character persona constraints to ensure educational content is delivered.]";
-                response = await callApi(fallbackContext, true);
-                if (response.ok) {
-                    const data = await safeResponseJson(response);
-                    text = data.choices?.[0]?.message?.content || data.choices?.[0]?.message?.reasoning_content || "（内容仍被拦截，请尝试更换模型或缩短文本）";
-                }
-            }
-            
-            if (!text) {
-                throw new Error("模型返回内容为空 (Max Tokens Limit or Filter)");
-            }
-
+        if (segIdx >= segments.length) {
             const updatedChapters = [...course.chapters];
-            updatedChapters[chapterIdx] = { ...chapter, content: text };
+            updatedChapters[chapterIdx] = { ...chapter, currentSegmentIndex: 0 };
             const updatedCourse = { ...course, chapters: updatedChapters };
-            
             await DB.saveCourse(updatedCourse);
             setActiveCourse(updatedCourse);
             setCourses(prev => prev.map(c => c.id === updatedCourse.id ? updatedCourse : c));
-
-            setCurrentText(text);
-            setClassroomState('idle');
-            
-        } catch (e: any) {
-            console.error("Teach Error:", e);
-            setCurrentText(`抱歉，生成失败: ${e.message}。可能是这次输出太长了，换个模型或精简一下再试。`);
-            setClassroomState('idle');
+            return handleTeach(updatedCourse, chapterIdx, forceRegenerate);
         }
+
+        const seg = segments[segIdx];
+        const numberedText = buildNumberedText(paragraphs, seg.start, seg.end);
+        await doTeachWithNumberedText(course, chapterIdx, numberedText, forceRegenerate, segIdx);
     };
 
     const handleRegenerateChapter = () => {
@@ -742,7 +857,25 @@ You are now acting as a private tutor for ${userProfile.name}.
         handleTeach(activeCourse, activeCourse.currentChapterIndex, true);
     };
 
-    // [修改] handleAskQuestion - 保存问答到数据库
+    // 翻页功能
+    const handleChangeSegment = async (delta: number) => {
+        if (!activeCourse) return;
+        const chapter = activeCourse.chapters[activeCourse.currentChapterIndex];
+        const newIdx = (chapter.currentSegmentIndex || 0) + delta;
+        const total = chapter.segmentsMeta?.length || 0;
+        if (newIdx < 0 || newIdx >= total) return;
+        
+        const updatedChapters = [...activeCourse.chapters];
+        updatedChapters[activeCourse.currentChapterIndex] = { ...chapter, currentSegmentIndex: newIdx };
+        const updatedCourse = { ...activeCourse, chapters: updatedChapters };
+        await DB.saveCourse(updatedCourse);
+        setActiveCourse(updatedCourse);
+        setCourses(prev => prev.map(c => c.id === updatedCourse.id ? updatedCourse : c));
+        handleTeach(updatedCourse, activeCourse.currentChapterIndex, true);
+    };
+        // ============================================================
+    // 提问（保存问答历史）
+    // ============================================================
     const handleAskQuestion = async () => {
         if (!userQuestion.trim() || !activeCourse || !selectedChar) return;
         
@@ -754,37 +887,51 @@ You are now acting as a private tutor for ${userProfile.name}.
         setCurrentText("让我想想...");
 
         try {
-            const totalLen = activeCourse.rawText.length;
-            const chunkSize = Math.floor(totalLen / activeCourse.chapters.length);
-            const start = activeCourse.currentChapterIndex * chunkSize;
-            const chunkText = activeCourse.rawText.substring(start, start + chunkSize + 2000);
+            const chapter = activeCourse.chapters[activeCourse.currentChapterIndex];
+            const segIdx = chapter.currentSegmentIndex || 0;
+            const segments = chapter.segmentsMeta || [];
+            const paragraphs = chapter.paragraphs || [];
+            let contextText = '';
+
+            if (segments.length > 0 && paragraphs.length > 0 && segIdx < segments.length) {
+                const seg = segments[segIdx];
+                contextText = buildNumberedText(paragraphs, seg.start, seg.end);
+            } else {
+                const totalLen = activeCourse.rawText.length;
+                const chunkSize = Math.floor(totalLen / activeCourse.chapters.length);
+                const start = activeCourse.currentChapterIndex * chunkSize;
+                contextText = activeCourse.rawText.substring(start, start + chunkSize + 2000);
+            }
 
             await injectMemoryPalace(selectedChar, undefined, question);
             let baseContext = ContextBuilder.buildCoreContext(selectedChar, userProfile, true);
             baseContext += `
 ### [System: Study Mode Q&A]
-User is asking a question about the study material.
-- **Maintain Personality**: Answer in character.
-`;
+用户正在阅读原文，有问题想问你。
 
-            const prompt = `${baseContext}
-### Source Material
-${chunkText.substring(0, 8000)}
+### 当前阅读的原文片段
+${contextText.substring(0, 4000)}
 
-### User Question
+### 用户的问题
 "${question}"
 
-### Task
-Answer the question based on the source material. Be helpful and encouraging (in character). Use Markdown.
-`;
+### 任务
+基于原文回答用户的问题。保持你的人物性格。使用 Markdown 格式。`;
+
             const response = await fetch(`${effectiveApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${effectiveApi.apiKey}` },
                 body: JSON.stringify({
                     model: effectiveApi.model,
-                    messages: [{ role: "user", content: prompt }],
+                    messages: [{ role: "user", content: baseContext }],
                     temperature: 0.7,
-                    max_tokens: 8000
+                    max_tokens: 4000,
+                    safetySettings: [
+                        { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+                        { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+                        { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+                        { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
+                    ]
                 })
             });
             
@@ -795,7 +942,6 @@ Answer the question based on the source material. Be helpful and encouraging (in
             setChatHistory(prev => [...prev, { role: 'assistant', content: text }]);
             setClassroomState('idle');
 
-            // [新增] 保存问答到课程
             const updatedCourse = { ...activeCourse };
             if (!updatedCourse.qaLogs) updatedCourse.qaLogs = [];
             updatedCourse.qaLogs.push({
@@ -813,6 +959,9 @@ Answer the question based on the source material. Be helpful and encouraging (in
         }
     };
 
+    // ============================================================
+    // 完成章节
+    // ============================================================
     const handleFinishChapter = async () => {
         if (!activeCourse || !selectedChar) return;
         
@@ -839,7 +988,7 @@ Answer the question based on the source material. Be helpful and encouraging (in
 [System: Memory Generation]
 Role: ${selectedChar.name} (Teacher)
 Action: Just finished teaching "${updatedChapters[activeCourse.currentChapterIndex].title}" to ${userProfile.name}.
-Task: Write a short, **first-person** diary entry (1 sentence) about this teaching session.
+Task: Write a short, first-person diary entry (1 sentence) about this teaching session.
 Format: "今天给[User]讲了[Topic]..." or "Today I taught [User] about..."
 Note: Use "我" (I) to refer to yourself.
 `;
@@ -865,6 +1014,9 @@ Note: Use "我" (I) to refer to yourself.
     const jumpToChapter = (idx: number) => {
         if (!activeCourse) return;
         const updatedCourse = { ...activeCourse, currentChapterIndex: idx };
+        const updatedChapters = [...updatedCourse.chapters];
+        updatedChapters[idx] = { ...updatedChapters[idx], currentSegmentIndex: 0 };
+        updatedCourse.chapters = updatedChapters;
         setActiveCourse(updatedCourse);
         DB.saveCourse(updatedCourse);
         setCourses(prev => prev.map(c => c.id === updatedCourse.id ? updatedCourse : c));
@@ -885,8 +1037,9 @@ Note: Use "我" (I) to refer to yourself.
         addToast('课程已删除', 'success');
     };
 
-    // --- Quiz Logic ---
-
+    // ============================================================
+    // 测验逻辑（保持不变）
+    // ============================================================
     const loadQuizzes = async () => {
         const list = await DB.getAllQuizzes();
         setAllQuizzes(list.sort((a, b) => b.createdAt - a.createdAt));
@@ -1217,321 +1370,28 @@ Answer in character. Be helpful and clear.`;
         });
     };
 
-    // --- Render ---
-
-    // PRACTICE BOOK VIEW
-    if (mode === 'practice_book') {
-        return (
-            <div className="h-full w-full bg-[#fdfbf7] flex flex-col font-sans relative">
-                <div className="bg-[#fdfbf7]/90 backdrop-blur-md border-b border-[#e5e5e5] shrink-0 sticky top-0 z-20" style={{ paddingTop: 'var(--safe-top)' }}>
-                    <div className="flex items-center px-6 py-3">
-                        <div className="flex justify-between items-center w-full">
-                            <button onClick={() => setMode('bookshelf')} className="p-2 -ml-2 rounded-full hover:bg-black/5 active:scale-90 transition-transform">
-                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6 text-slate-600"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
-                            </button>
-                            <span className="font-bold text-slate-800 text-lg tracking-wide">练习册</span>
-                            <div className="w-10" />
-                        </div>
-                    </div>
-                </div>
-
-                <div className="p-6 flex-1 overflow-y-auto no-scrollbar">
-                    {allQuizzes.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center h-full text-slate-400">
-                            <Notepad size={48} className="mb-4 text-slate-400" />
-                            <span className="text-sm">还没有做过题哦</span>
-                            <span className="text-xs mt-1">在自习室的课堂中点击「刷题」开始吧</span>
-                        </div>
-                    ) : (
-                        <div className="space-y-3">
-                            {allQuizzes.map(quiz => (
-                                <div key={quiz.id} onClick={() => resumeQuiz(quiz)} className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 active:scale-[0.98] transition-transform cursor-pointer">
-                                    <div className="flex items-start justify-between">
-                                        <div className="flex-1 min-w-0">
-                                            <div className="text-sm font-bold text-slate-800 truncate">{quiz.courseTitle}</div>
-                                            <div className="text-xs text-slate-500 mt-0.5 truncate">{quiz.chapterTitle}</div>
-                                            <div className="flex items-center gap-3 mt-2">
-                                                {quiz.status === 'graded' ? (
-                                                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${quiz.score === quiz.totalQuestions ? 'bg-emerald-100 text-emerald-600' : quiz.score >= quiz.totalQuestions * 0.6 ? 'bg-amber-100 text-amber-600' : 'bg-red-100 text-red-600'}`}>
-                                                        {quiz.score}/{quiz.totalQuestions}
-                                                    </span>
-                                                ) : (
-                                                    <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-600">答题中</span>
-                                                )}
-                                                <span className="text-[10px] text-slate-400">{new Date(quiz.createdAt).toLocaleDateString()}</span>
-                                            </div>
-                                        </div>
-                                        <button onClick={(e) => { e.stopPropagation(); setDeleteQuizTarget(quiz); }} className="p-2 text-slate-300 hover:text-red-400 transition-colors">
-                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg>
-                                        </button>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                </div>
-
-                <Modal isOpen={!!deleteQuizTarget} title="删除试卷" onClose={() => setDeleteQuizTarget(null)} footer={
-                    <div className="flex gap-2 w-full">
-                        <button onClick={() => setDeleteQuizTarget(null)} className="flex-1 py-3 bg-slate-100 text-slate-500 font-bold rounded-2xl">取消</button>
-                        <button onClick={confirmDeleteQuiz} className="flex-1 py-3 bg-red-500 text-white font-bold rounded-2xl shadow-lg shadow-red-200">确认删除</button>
-                    </div>
-                }>
-                    <div className="py-4 text-center">
-                        <p className="text-sm text-slate-600 mb-2">确定要删除这份试卷吗？</p>
-                        <p className="text-xs text-red-400">试卷和锐评内容将被永久删除。</p>
-                    </div>
-                </Modal>
-            </div>
-        );
-    }
-
-    // QUIZ REVIEW VIEW
-    if (mode === 'quiz_review' && quizSession) {
-        const viewQuiz = reviewingQuiz || quizSession;
-        // [修改] 浅色护眼主题
-        return (
-            <div className="h-full w-full bg-[#f4f7fb] flex flex-col relative overflow-hidden font-sans">
-                <div className="absolute inset-0 opacity-5 pointer-events-none" style={{ backgroundImage: 'linear-gradient(rgba(0,0,0,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(0,0,0,0.05) 1px, transparent 1px)', backgroundSize: '40px 40px' }}></div>
-
-                <div className="bg-white/80 backdrop-blur-md px-4 pb-4 flex items-center justify-between z-30 border-b border-slate-200/50" style={{ paddingTop: 'max(1rem, var(--safe-top))' }}>
-                    <button onClick={() => { setMode('classroom'); setReviewingQuiz(null); }} className="bg-slate-100 text-slate-600 p-2 rounded-full hover:bg-slate-200 transition-colors border border-slate-200">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
-                    </button>
-                    <div className="text-center">
-                        <div className="text-slate-800 font-bold text-sm">批改结果</div>
-                        <div className={`text-xs font-bold mt-0.5 ${viewQuiz.score === viewQuiz.totalQuestions ? 'text-emerald-600' : viewQuiz.score >= viewQuiz.totalQuestions * 0.6 ? 'text-amber-600' : 'text-red-600'}`}>
-                            {viewQuiz.score}/{viewQuiz.totalQuestions} ({Math.round((viewQuiz.score / viewQuiz.totalQuestions) * 100)}%)
-                        </div>
-                    </div>
-                    <div className="w-9" />
-                </div>
-
-                <div className="flex-1 overflow-y-auto no-scrollbar p-6 pb-24 relative z-10">
-                    <div className={`rounded-2xl p-6 mb-6 text-center ${viewQuiz.score === viewQuiz.totalQuestions ? 'bg-emerald-50 border border-emerald-200' : viewQuiz.score >= viewQuiz.totalQuestions * 0.6 ? 'bg-amber-50 border border-amber-200' : 'bg-red-50 border border-red-200'}`}>
-                        <div className="text-5xl font-bold text-slate-800 mb-2">{viewQuiz.score}<span className="text-2xl text-slate-400">/{viewQuiz.totalQuestions}</span></div>
-                        <div className="text-sm text-slate-500">{viewQuiz.chapterTitle}</div>
-                    </div>
-
-                    <div className="space-y-4 mb-6">
-                        {viewQuiz.questions.map((q, i) => (
-                            <div key={q.id} className={`rounded-2xl p-4 border ${q.isCorrect ? 'bg-emerald-50/50 border-emerald-200' : 'bg-red-50/50 border-red-200'}`}>
-                                <div className="flex items-start gap-2 mb-2">
-                                    <span className={`text-sm font-bold shrink-0 ${q.isCorrect ? 'text-emerald-600' : 'text-red-600'}`}>{q.isCorrect ? <Check size={16} weight="bold" /> : <X size={16} weight="bold" />}</span>
-                                    <span className="text-slate-800 text-sm">{i + 1}. {q.stem}</span>
-                                </div>
-                                {q.options && (
-                                    <div className="ml-6 space-y-1 mb-2">
-                                        {q.options.map((opt, oi) => {
-                                            const optLetter = opt.charAt(0);
-                                            const isUserPick = q.userAnswer?.toUpperCase() === optLetter.toUpperCase();
-                                            const isCorrectOpt = q.answer.toUpperCase() === optLetter.toUpperCase();
-                                            return (
-                                                <div key={oi} className={`text-xs px-2 py-1 rounded ${isCorrectOpt ? 'text-emerald-700 bg-emerald-100/50' : isUserPick && !q.isCorrect ? 'text-red-700 bg-red-100/50' : 'text-slate-400'}`}>
-                                                    {opt} {isCorrectOpt && !q.isCorrect && '← 正确答案'} {isUserPick && !q.isCorrect && '← 你的选择'}
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                )}
-                                {q.type !== 'choice' && (
-                                    <div className="ml-6 text-xs space-y-1 mb-2">
-                                        <div className={`${q.isCorrect ? 'text-emerald-700' : 'text-red-700'}`}>你的答案: {q.userAnswer || '(未作答)'}</div>
-                                        {!q.isCorrect && <div className="text-emerald-700">正确答案: {q.answer}</div>}
-                                    </div>
-                                )}
-                                {q.explanation && <div className="ml-6 text-[10px] text-slate-400 mt-1">解析: {q.explanation}</div>}
-
-                                {q.notes && q.notes.length > 0 && (
-                                    <div className="ml-6 mt-3 space-y-2">
-                                        {q.notes.map((note, ni) => (
-                                            <div key={ni} className="bg-slate-100 rounded-xl p-3 border border-slate-200">
-                                                <div className="text-[10px] text-blue-600 font-bold mb-1">Q: {note.question}</div>
-                                                <div className="text-xs text-slate-700 leading-relaxed">
-                                                    <BlackboardRenderer text={note.answer} katexRenderer={katexRenderer} />
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-
-                                <div className="ml-6 mt-2">
-                                    {askingQuestionId === q.id ? (
-                                        <div className="flex gap-2 items-center">
-                                            <input
-                                                value={followUpInput}
-                                                onChange={e => setFollowUpInput(e.target.value)}
-                                                onKeyDown={e => e.key === 'Enter' && handleFollowUp(q.id)}
-                                                placeholder="哪里不明白？"
-                                                className="flex-1 bg-white rounded-lg px-3 py-1.5 text-xs text-slate-800 placeholder:text-slate-400 outline-none border border-slate-200 focus:border-blue-500"
-                                                autoFocus
-                                                disabled={followUpLoading}
-                                            />
-                                            {followUpLoading ? (
-                                                <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin shrink-0"></div>
-                                            ) : (
-                                                <>
-                                                    <button onClick={() => handleFollowUp(q.id)} disabled={!followUpInput.trim()} className="text-blue-600 text-xs font-bold px-2 py-1 hover:bg-slate-100 rounded disabled:opacity-30">发送</button>
-                                                    <button onClick={() => { setAskingQuestionId(''); setFollowUpInput(''); }} className="text-slate-400 text-xs px-1">取消</button>
-                                                </>
-                                            )}
-                                        </div>
-                                    ) : (
-                                        <button onClick={() => setAskingQuestionId(q.id)} className="text-[10px] text-blue-500/70 hover:text-blue-600 transition-colors flex items-center gap-1">
-                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3 h-3"><path strokeLinecap="round" strokeLinejoin="round" d="M8.625 12a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H8.25m4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H12m4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 0 1-2.555-.337A5.972 5.972 0 0 1 5.41 20.97a5.969 5.969 0 0 1-.474-.065 4.48 4.48 0 0 0 .978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25Z" /></svg>
-                                            追问
-                                        </button>
-                                    )}
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-
-                    {viewQuiz.aiReview && (
-                        <div className="mb-6">
-                            <div className="flex items-center gap-2 mb-3">
-                                {selectedChar && <img src={selectedChar.avatar} className="w-8 h-8 rounded-full object-cover border-2 border-blue-400/30" />}
-                                <span className="text-blue-600 text-sm font-bold">{selectedChar?.name || '助教'} 的锐评</span>
-                            </div>
-                            <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
-                                <BlackboardRenderer text={viewQuiz.aiReview} katexRenderer={katexRenderer} />
-                            </div>
-                        </div>
-                    )}
-                </div>
-
-                <div className="absolute bottom-0 w-full bg-white/95 backdrop-blur-xl border-t border-slate-200 p-4 z-30 pb-safe">
-                    <button onClick={() => { setMode('classroom'); setReviewingQuiz(null); }} className="w-full h-12 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-bold shadow-lg shadow-blue-200 active:scale-95 transition-all">
-                        返回课堂
-                    </button>
-                </div>
-            </div>
-        );
-    }
-
-    // QUIZ ANSWERING VIEW
-    if (mode === 'quiz') {
-        return (
-            <div className="h-full w-full bg-[#fdfbf7] flex flex-col font-sans relative">
-                <div className="bg-[#fdfbf7]/90 backdrop-blur-md border-b border-[#e5e5e5] shrink-0 sticky top-0 z-20" style={{ paddingTop: 'var(--safe-top)' }}>
-                    <div className="flex items-center px-6 py-3">
-                        <div className="flex justify-between items-center w-full">
-                            <button onClick={() => {
-                                if (quizSession && quizSession.status === 'in_progress') {
-                                    const updated = { ...quizSession, questions: quizSession.questions.map(q => ({ ...q, userAnswer: quizUserAnswers[q.id] || q.userAnswer })) };
-                                    DB.saveQuiz(updated);
-                                }
-                                setMode('classroom');
-                            }} className="p-2 -ml-2 rounded-full hover:bg-black/5 active:scale-90 transition-transform">
-                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6 text-slate-600"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
-                            </button>
-                            <span className="font-bold text-slate-800 text-sm tracking-wide">{quizSession?.chapterTitle || '做题中'}</span>
-                            <div className="text-xs text-slate-400 font-bold">
-                                {Object.keys(quizUserAnswers).length}/{quizSession?.questions.length || 0}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                {quizLoading ? (
-                    <div className="flex-1 flex flex-col items-center justify-center gap-4">
-                        <div className="w-10 h-10 border-3 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-                        <span className="text-sm text-slate-500 font-bold">{quizLoading}</span>
-                        {selectedChar && (
-                            <div className="flex items-center gap-2 mt-2">
-                                <img src={selectedChar.avatar} className="w-8 h-8 rounded-full object-cover" />
-                                <span className="text-xs text-slate-400">{selectedChar.name} 正在出题...</span>
-                            </div>
-                        )}
-                    </div>
-                ) : quizSession ? (
-                    <>
-                        <div className="flex-1 overflow-y-auto no-scrollbar p-6 pb-32">
-                            <div className="space-y-6">
-                                {quizSession.questions.map((q, i) => (
-                                    <div key={q.id} className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100">
-                                        <div className="flex items-start gap-2 mb-4">
-                                            <span className="bg-blue-100 text-blue-700 text-xs font-bold px-2 py-0.5 rounded-full shrink-0">
-                                                {q.type === 'choice' ? '选择' : q.type === 'true_false' ? '判断' : '填空'}
-                                            </span>
-                                            <span className="text-sm text-slate-800 font-medium leading-relaxed">{i + 1}. {q.stem}</span>
-                                        </div>
-
-                                        {q.type === 'choice' && q.options && (
-                                            <div className="space-y-2 ml-1">
-                                                {q.options.map((opt, oi) => {
-                                                    const optLetter = opt.charAt(0);
-                                                    const isSelected = (quizUserAnswers[q.id] || '').toUpperCase() === optLetter.toUpperCase();
-                                                    return (
-                                                        <button key={oi} onClick={() => handleQuizAnswer(q.id, optLetter)} className={`w-full text-left px-4 py-3 rounded-xl text-sm transition-all ${isSelected ? 'bg-blue-500 text-white font-bold shadow-sm' : 'bg-slate-50 text-slate-700 hover:bg-slate-100 active:scale-[0.98]'}`}>
-                                                            {opt}
-                                                        </button>
-                                                    );
-                                                })}
-                                            </div>
-                                        )}
-
-                                        {q.type === 'true_false' && (
-                                            <div className="flex gap-3 ml-1">
-                                                {[{ val: 'true', label: '正确' }, { val: 'false', label: '错误' }].map(opt => {
-                                                    const isSelected = quizUserAnswers[q.id] === opt.val;
-                                                    return (
-                                                        <button key={opt.val} onClick={() => handleQuizAnswer(q.id, opt.val)} className={`flex-1 py-3 rounded-xl text-sm font-bold transition-all ${isSelected ? (opt.val === 'true' ? 'bg-emerald-500 text-white' : 'bg-red-500 text-white') : 'bg-slate-50 text-slate-600 hover:bg-slate-100 active:scale-[0.98]'}`}>
-                                                            {opt.val === 'true' ? <CheckCircle size={16} weight="bold" className="inline" /> : <XCircle size={16} weight="bold" className="inline" />} {opt.label}
-                                                        </button>
-                                                    );
-                                                })}
-                                            </div>
-                                        )}
-
-                                        {q.type === 'fill_blank' && (
-                                            <input
-                                                value={quizUserAnswers[q.id] || ''}
-                                                onChange={e => handleQuizAnswer(q.id, e.target.value)}
-                                                placeholder="输入你的答案..."
-                                                className="w-full bg-slate-50 rounded-xl px-4 py-3 text-sm focus:outline-blue-500 border border-slate-200 ml-1"
-                                            />
-                                        )}
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-
-                        <div className="absolute bottom-0 w-full bg-[#fdfbf7]/95 backdrop-blur-xl border-t border-slate-200 p-4 z-30 pb-safe">
-                            <button
-                                onClick={submitQuiz}
-                                disabled={!!quizLoading}
-                                className="w-full h-12 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-bold shadow-lg shadow-blue-200 active:scale-95 transition-all disabled:opacity-50"
-                            >
-                                {quizLoading ? quizLoading : `交卷 (${Object.keys(quizUserAnswers).length}/${quizSession.questions.length})`}
-                            </button>
-                        </div>
-                    </>
-                ) : null}
-            </div>
-        );
-    }
-
-    // BOOKSHELF VIEW
+    // ============================================================
+    // 渲染 — 书库视图
+    // ============================================================
     if (mode === 'bookshelf') {
         return (
             <div className="h-full w-full bg-[#fdfbf7] flex flex-col font-sans relative">
                 <div className="bg-[#fdfbf7]/90 backdrop-blur-md border-b border-[#e5e5e5] shrink-0 sticky top-0 z-20" style={{ paddingTop: 'var(--safe-top)' }}>
                     <div className="flex items-center px-6 py-3">
-                    <div className="flex justify-between items-center w-full">
-                        <button onClick={closeApp} className="p-2 -ml-2 rounded-full hover:bg-black/5 active:scale-90 transition-transform">
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6 text-slate-600"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
-                        </button>
-                        <span className="font-bold text-slate-800 text-lg tracking-wide">自习室</span>
-                        <div className="flex gap-1">
-                            <button onClick={() => { loadQuizzes(); setMode('practice_book'); }} className="p-2 rounded-full hover:bg-black/5 active:scale-90 transition-transform" title="练习册">
-                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 text-slate-500"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 0 0 2.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 0 0-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 0 0 .75-.75 2.25 2.25 0 0 0-.1-.664m-5.8 0A2.251 2.251 0 0 1 13.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25ZM6.75 12h.008v.008H6.75V12Zm0 3h.008v.008H6.75V15Zm0 3h.008v.008H6.75V18Z" /></svg>
+                        <div className="flex justify-between items-center w-full">
+                            <button onClick={closeApp} className="p-2 -ml-2 rounded-full hover:bg-black/5 active:scale-90 transition-transform">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6 text-slate-600"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
                             </button>
-                            <button onClick={() => setShowStudySettings(true)} className="p-2 -mr-2 rounded-full hover:bg-black/5 active:scale-90 transition-transform">
-                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 text-slate-500"><path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a7.723 7.723 0 0 1 0 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 0 1 0-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28Z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /></svg>
-                            </button>
+                            <span className="font-bold text-slate-800 text-lg tracking-wide">自习室</span>
+                            <div className="flex gap-1">
+                                <button onClick={() => { loadQuizzes(); setMode('practice_book'); }} className="p-2 rounded-full hover:bg-black/5 active:scale-90 transition-transform" title="练习册">
+                                    <Notepad size={20} className="text-slate-500" />
+                                </button>
+                                <button onClick={() => setShowStudySettings(true)} className="p-2 -mr-2 rounded-full hover:bg-black/5 active:scale-90 transition-transform">
+                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 text-slate-500"><path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a7.723 7.723 0 0 1 0 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 0 1 0-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28Z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /></svg>
+                                </button>
+                            </div>
                         </div>
-                    </div>
                     </div>
                 </div>
 
@@ -1580,10 +1440,7 @@ Answer in character. Be helpful and clear.`;
                                         </div>
                                     </div>
                                 </div>
-                                <button 
-                                    onClick={(e) => requestDeleteCourse(e, course)} 
-                                    className="absolute top-2 right-2 bg-black/20 hover:bg-red-500 text-white w-7 h-7 rounded-full flex items-center justify-center backdrop-blur-md transition-all z-20"
-                                >
+                                <button onClick={(e) => requestDeleteCourse(e, course)} className="absolute top-2 right-2 bg-black/20 hover:bg-red-500 text-white w-7 h-7 rounded-full flex items-center justify-center backdrop-blur-md transition-all z-20">
                                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
                                 </button>
                             </div>
@@ -1609,7 +1466,7 @@ Answer in character. Be helpful and clear.`;
                             </div>
                         )}
                         <div>
-                            <label className="text-[10px] font-bold text-slate-400 uppercase mb-2 block">AI 助教偏好 (Preferences)</label>
+                            <label className="text-[10px] font-bold text-slate-400 uppercase mb-2 block">AI 助教偏好</label>
                             <textarea
                                 value={importPreference}
                                 onChange={e => setImportPreference(e.target.value)}
@@ -1674,17 +1531,12 @@ Answer in character. Be helpful and clear.`;
                     </div>
                 </Modal>
 
-                <Modal 
-                    isOpen={!!deleteTarget} 
-                    title="删除课程" 
-                    onClose={() => setDeleteTarget(null)} 
-                    footer={
-                        <div className="flex gap-2 w-full">
-                            <button onClick={() => setDeleteTarget(null)} className="flex-1 py-3 bg-slate-100 text-slate-500 font-bold rounded-2xl">取消</button>
-                            <button onClick={confirmDeleteCourse} className="flex-1 py-3 bg-red-500 text-white font-bold rounded-2xl shadow-lg shadow-red-200">确认删除</button>
-                        </div>
-                    }
-                >
+                <Modal isOpen={!!deleteTarget} title="删除课程" onClose={() => setDeleteTarget(null)} footer={
+                    <div className="flex gap-2 w-full">
+                        <button onClick={() => setDeleteTarget(null)} className="flex-1 py-3 bg-slate-100 text-slate-500 font-bold rounded-2xl">取消</button>
+                        <button onClick={confirmDeleteCourse} className="flex-1 py-3 bg-red-500 text-white font-bold rounded-2xl shadow-lg shadow-red-200">确认删除</button>
+                    </div>
+                }>
                     <div className="py-4 text-center">
                         <p className="text-sm text-slate-600 mb-2">确定要删除课程 <br/><span className="font-bold text-slate-800">"{deleteTarget?.title}"</span> 吗？</p>
                         <p className="text-xs text-red-400">删除后无法恢复，学习进度将丢失。</p>
@@ -1694,7 +1546,9 @@ Answer in character. Be helpful and clear.`;
         );
     }
 
-    // [修改] CLASSROOM VIEW - 浅色护眼主题
+    // ============================================================
+    // 渲染 — 课堂视图（浅色护眼 + 灰蓝批注）
+    // ============================================================
     return (
         <div className="h-full w-full bg-[#f4f7fb] flex flex-col relative overflow-hidden font-sans">
             
@@ -1707,12 +1561,16 @@ Answer in character. Be helpful and clear.`;
                 <div className="flex gap-2">
                     <div onClick={() => setShowChapterMenu(true)} className="bg-white/80 text-slate-700 px-4 py-1.5 rounded-full backdrop-blur-md text-xs font-bold border border-slate-200/50 shadow-sm pointer-events-auto cursor-pointer flex items-center gap-2 hover:bg-white">
                         <span className="truncate max-w-[150px]">{activeCourse?.chapters[activeCourse.currentChapterIndex]?.title}</span>
+                        <span className="text-[10px] text-slate-400">
+                            {activeCourse?.chapters[activeCourse.currentChapterIndex]?.segmentsMeta && 
+                                `${(activeCourse.chapters[activeCourse.currentChapterIndex].currentSegmentIndex || 0) + 1}/${activeCourse.chapters[activeCourse.currentChapterIndex].segmentsMeta!.length}`
+                            }
+                        </span>
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3 h-3"><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" /></svg>
                     </div>
                     <button onClick={() => setShowAssistant(!showAssistant)} className={`bg-white/80 p-2 rounded-full backdrop-blur-md border border-slate-200/50 shadow-sm pointer-events-auto transition-colors ${showAssistant ? 'text-blue-500' : 'text-slate-400'}`}>
                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5"><path d="M10 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM3.465 14.493a1.23 1.23 0 0 0 .41 1.412A9.957 9.957 0 0 0 10 18c2.31 0 4.438-.784 6.131-2.1.43-.333.604-.903.408-1.41a7.002 7.002 0 0 0-13.074.003Z" /></svg>
                     </button>
-                    {/* [新增] 问答历史按钮 */}
                     <button onClick={() => setShowQALogs(!showQALogs)} className={`bg-white/80 p-2 rounded-full backdrop-blur-md border border-slate-200/50 shadow-sm pointer-events-auto transition-colors ${showQALogs ? 'text-blue-500' : 'text-slate-400'}`}>
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
                             <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 0 0 6 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 0 1 6 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 0 1 6-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0 0 18 18a8.967 8.967 0 0 0-6 2.292m0-14.25v14.25" />
@@ -1721,7 +1579,7 @@ Answer in character. Be helpful and clear.`;
                 </div>
             </div>
 
-            {/* [新增] 问答历史侧边栏 */}
+            {/* 问答历史侧边栏 */}
             {showQALogs && activeCourse?.qaLogs && activeCourse.qaLogs.length > 0 && (
                 <div className="absolute inset-0 z-40 flex">
                     <div className="flex-1 bg-black/20 backdrop-blur-sm" onClick={() => setShowQALogs(false)}></div>
@@ -1753,18 +1611,19 @@ Answer in character. Be helpful and clear.`;
                     <div className="w-64 bg-white border-l border-slate-200 h-full flex flex-col p-4 shadow-xl animate-slide-in-right">
                         <h3 className="text-slate-800 font-bold text-sm mb-4 uppercase tracking-widest">课程目录</h3>
                         <div className="flex-1 overflow-y-auto no-scrollbar space-y-2">
-                            {activeCourse?.chapters.map((ch, idx) => (
-                                <button 
-                                    key={ch.id} 
-                                    onClick={() => jumpToChapter(idx)}
-                                    className={`w-full text-left p-3 rounded-xl text-xs transition-all ${idx === activeCourse.currentChapterIndex ? 'bg-blue-600 text-white font-bold' : 'text-slate-600 hover:bg-slate-100'}`}
-                                >
-                                    <div className="flex items-center gap-2">
-                                        {ch.isCompleted ? <Check size={14} weight="bold" className="text-blue-400" /> : <span className="w-2 h-2 rounded-full bg-slate-300"></span>}
-                                        {ch.title}
-                                    </div>
-                                </button>
-                            ))}
+                            {activeCourse?.chapters.map((ch, idx) => {
+                                const totalSegs = ch.segmentsMeta?.length || 0;
+                                const doneSegs = ch.segmentsMeta?.filter(s => s.status === 'done').length || 0;
+                                return (
+                                    <button key={ch.id} onClick={() => jumpToChapter(idx)} className={`w-full text-left p-3 rounded-xl text-xs transition-all ${idx === activeCourse.currentChapterIndex ? 'bg-blue-600 text-white font-bold' : 'text-slate-600 hover:bg-slate-100'}`}>
+                                        <div className="flex items-center gap-2">
+                                            {ch.isCompleted ? <Check size={14} weight="bold" className="text-blue-400" /> : <span className="w-2 h-2 rounded-full bg-slate-300"></span>}
+                                            <span className="flex-1 truncate">{ch.title}</span>
+                                            {totalSegs > 0 && <span className="text-[10px] opacity-60">{doneSegs}/{totalSegs}</span>}
+                                        </div>
+                                    </button>
+                                );
+                            })}
                         </div>
                     </div>
                 </div>
@@ -1778,46 +1637,47 @@ Answer in character. Be helpful and clear.`;
 
             {showAssistant && (
                 <div className="absolute bottom-20 right-[-20px] w-[160px] h-[220px] z-20 pointer-events-none flex items-end justify-center transition-all duration-500 animate-slide-in-right" style={{ transform: isTyping ? 'scale(1.05)' : 'scale(1)', opacity: isTyping || classroomState === 'teaching' ? 1 : 0.8 }}>
-                     <img 
-                        src={currentSprite} 
-                        className="max-h-full max-w-full object-contain drop-shadow-[0_5px_15px_rgba(0,0,0,0.15)]"
-                    />
+                    <img src={currentSprite} className="max-h-full max-w-full object-contain drop-shadow-[0_5px_15px_rgba(0,0,0,0.15)]" />
                 </div>
             )}
 
             <div className="absolute bottom-0 w-full bg-white/95 backdrop-blur-xl border-t border-slate-200 p-4 z-30 pb-safe">
                 <div className="flex gap-3">
                     {classroomState === 'teaching' || isTyping ? (
-                        <div className="w-full h-12 flex items-center justify-center text-slate-400 text-sm animate-pulse font-mono tracking-widest">
-                            LECTURING...
-                        </div>
+                        <div className="w-full h-12 flex items-center justify-center text-slate-400 text-sm animate-pulse font-mono tracking-widest">LECTURING...</div>
                     ) : classroomState === 'finished' ? (
-                        <button onClick={() => setMode('bookshelf')} className="flex-1 h-12 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-bold shadow-lg shadow-blue-200 active:scale-95 transition-all">
-                            完成课程
-                        </button>
+                        <button onClick={() => setMode('bookshelf')} className="flex-1 h-12 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-bold shadow-lg shadow-blue-200 active:scale-95 transition-all">完成课程</button>
                     ) : classroomState === 'q_and_a' ? (
                         <div className="w-full bg-slate-100 rounded-2xl p-1 flex items-center border border-slate-200">
-                            <input 
-                                value={userQuestion}
-                                onChange={e => setUserQuestion(e.target.value)}
-                                placeholder="输入你的问题..."
-                                className="flex-1 bg-transparent px-4 py-2 text-slate-800 text-sm outline-none placeholder:text-slate-400"
-                                autoFocus
-                            />
+                            <input value={userQuestion} onChange={e => setUserQuestion(e.target.value)} placeholder="输入你的问题..." className="flex-1 bg-transparent px-4 py-2 text-slate-800 text-sm outline-none placeholder:text-slate-400" autoFocus />
                             <button onClick={handleAskQuestion} className="bg-blue-600 text-white px-5 py-2 rounded-xl text-xs font-bold ml-2 shadow-sm">发送</button>
                         </div>
                     ) : (
                         <>
-                            <button onClick={handleRegenerateChapter} className="w-12 h-12 bg-slate-100 hover:bg-slate-200 text-slate-500 rounded-2xl font-bold border border-slate-200 active:scale-95 transition-all flex items-center justify-center" title="重新生成本章">
+                            {/* 上一段 */}
+                            <button onClick={() => handleChangeSegment(-1)} disabled={activeCourse?.chapters[activeCourse.currentChapterIndex]?.currentSegmentIndex === 0} className="w-10 h-10 bg-slate-100 hover:bg-slate-200 text-slate-500 rounded-xl border border-slate-200 active:scale-95 transition-all disabled:opacity-30 flex items-center justify-center">
+                                ◀
+                            </button>
+                            {/* 段进度 */}
+                            <span className="text-xs text-slate-400 flex items-center">
+                                {activeCourse?.chapters[activeCourse.currentChapterIndex]?.segmentsMeta && 
+                                    `${(activeCourse.chapters[activeCourse.currentChapterIndex].currentSegmentIndex || 0) + 1}/${activeCourse.chapters[activeCourse.currentChapterIndex].segmentsMeta!.length}`
+                                }
+                            </span>
+                            {/* 下一段 */}
+                            <button onClick={() => handleChangeSegment(1)} disabled={activeCourse?.chapters[activeCourse.currentChapterIndex]?.currentSegmentIndex === (activeCourse?.chapters[activeCourse.currentChapterIndex]?.segmentsMeta?.length || 0) - 1} className="w-10 h-10 bg-slate-100 hover:bg-slate-200 text-slate-500 rounded-xl border border-slate-200 active:scale-95 transition-all disabled:opacity-30 flex items-center justify-center">
+                                ▶
+                            </button>
+                            <button onClick={handleRegenerateChapter} className="w-10 h-10 bg-slate-100 hover:bg-slate-200 text-slate-500 rounded-xl border border-slate-200 active:scale-95 transition-all flex items-center justify-center">
                                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" /></svg>
                             </button>
-                            <button onClick={() => setClassroomState('q_and_a')} className="w-12 h-12 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-2xl font-bold border border-slate-200 active:scale-95 transition-all flex items-center justify-center">
-                                <Hand size={24} />
+                            <button onClick={() => setClassroomState('q_and_a')} className="w-10 h-10 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl border border-slate-200 active:scale-95 transition-all flex items-center justify-center">
+                                <Hand size={20} />
                             </button>
-                            <button onClick={openQuizSetup} className="w-12 h-12 bg-amber-500 hover:bg-amber-400 text-white rounded-2xl font-bold border border-amber-400/30 active:scale-95 transition-all flex items-center justify-center" title="刷题">
-                                <Notepad size={24} />
+                            <button onClick={openQuizSetup} className="w-10 h-10 bg-amber-500 hover:bg-amber-400 text-white rounded-xl border border-amber-400/30 active:scale-95 transition-all flex items-center justify-center">
+                                <Notepad size={20} />
                             </button>
-                            <button onClick={handleFinishChapter} className="flex-1 h-12 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-bold shadow-lg shadow-blue-200 active:scale-95 transition-all flex items-center justify-center gap-2">
+                            <button onClick={handleFinishChapter} className="flex-1 h-10 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold shadow-lg shadow-blue-200 active:scale-95 transition-all flex items-center justify-center gap-2 text-sm">
                                 下一章 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" /></svg>
                             </button>
                         </>
@@ -1826,15 +1686,12 @@ Answer in character. Be helpful and clear.`;
             </div>
 
             <Modal isOpen={quizShowSetup} title="刷题设置" onClose={() => setQuizShowSetup(false)} footer={
-                <button onClick={generateQuiz} disabled={quizTypes.length === 0} className="w-full py-3 bg-amber-500 text-white font-bold rounded-2xl disabled:opacity-40">
-                    开始出题
-                </button>
+                <button onClick={generateQuiz} disabled={quizTypes.length === 0} className="w-full py-3 bg-amber-500 text-white font-bold rounded-2xl disabled:opacity-40">开始出题</button>
             }>
                 <div className="space-y-5">
                     <div className="text-xs text-slate-500">
                         当前章节: <span className="font-bold text-slate-700">{activeCourse?.chapters[activeCourse?.currentChapterIndex || 0]?.title}</span>
                     </div>
-
                     <div>
                         <label className="text-[10px] font-bold text-slate-400 uppercase mb-2 block">题型选择</label>
                         <div className="flex flex-wrap gap-2">
@@ -1848,7 +1705,6 @@ Answer in character. Be helpful and clear.`;
                             })}
                         </div>
                     </div>
-
                     <div>
                         <label className="text-[10px] font-bold text-slate-400 uppercase mb-2 block">题目数量: {quizCount}</label>
                         <input type="range" min={3} max={15} value={quizCount} onChange={e => setQuizCount(Number(e.target.value))} className="w-full accent-amber-500" />
