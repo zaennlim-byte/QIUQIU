@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
@@ -81,16 +80,14 @@ const GRADIENTS = [
 ];
 
 // --- Renderer Component ---
-// Enhanced Markdown & Math Renderer
+// 已经写死Claude同款高级灰蓝与暖灰纸张色配色的渲染引擎
 const BlackboardRenderer: React.FC<{ text: string, isTyping?: boolean, katexRenderer?: { renderToString: (latex: string, options: any) => string } | null }> = ({ text, isTyping, katexRenderer }) => {
     
-    // Helper to render math using KaTeX
     const renderMath = (latex: string, displayMode: boolean) => {
         try {
-            // Clean up common latex issues from LLM
             const cleanLatex = latex
-                .replace(/\\\[/g, '') // Remove \[
-                .replace(/\\\]/g, ''); // Remove \]
+                .replace(/\\\[/g, '') 
+                .replace(/\\\]/g, ''); 
 
             const html = katexRenderer?.renderToString(cleanLatex, {
                 displayMode: displayMode,
@@ -98,112 +95,101 @@ const BlackboardRenderer: React.FC<{ text: string, isTyping?: boolean, katexRend
                 output: 'html',
             });
             if (!html) {
-                return <span className="font-mono text-emerald-200">{latex}</span>;
+                return <span className="font-mono text-[#2C3E50]">{latex}</span>;
             }
-            // Force white color for KaTeX elements specifically
             return <span dangerouslySetInnerHTML={{ __html: html }} className={displayMode ? "block my-2 w-full overflow-x-auto" : "inline-block mx-1"} />;
         } catch (e) {
-            return <span className="text-red-400 text-xs font-mono bg-black/20 p-1 rounded">{latex}</span>;
+            return <span className="text-red-500 text-xs font-mono bg-black/5 p-1 rounded">{latex}</span>;
         }
     };
 
-    // Inline Parser for Bold, Italic, Code, Inline Math ($...$)
     const parseInline = (line: string): React.ReactNode[] => {
-        // Regex logic:
-        // 1. $...$ (Inline Math)
-        // 2. **...** (Bold)
-        // 3. *...* (Italic)
-        // 4. `...` (Code)
-        const tokenRegex = /(\$[^$]+?\$|\*\*[^*]+?\*\*|\*[^*]+?\*|`[^`]+?`)/g;
+        const tokenRegex = /(\$[^$]+?\$|\*\*[^*]+?\*\*|\*[^*]+?\*|`[^`]+?`|【AI批注：[^】]+】)/g;
         
         return line.split(tokenRegex).map((part, i) => {
             if (part.startsWith('$') && part.endsWith('$')) {
                 return <span key={i}>{renderMath(part.slice(1, -1), false)}</span>;
             }
             if (part.startsWith('**') && part.endsWith('**')) {
-                return <strong key={i} className="text-emerald-300 font-bold mx-0.5">{part.slice(2, -2)}</strong>;
+                return <strong key={i} className="text-[#222222] font-bold mx-0.5">{part.slice(2, -2)}</strong>;
             }
             if (part.startsWith('*') && part.endsWith('*')) {
-                return <em key={i} className="text-emerald-200/80 italic">{part.slice(1, -1)}</em>;
+                return <em key={i} className="text-[#666666] italic">{part.slice(1, -1)}</em>;
             }
             if (part.startsWith('`') && part.endsWith('`')) {
-                return <code key={i} className="bg-black/40 text-orange-200 px-1.5 py-0.5 rounded font-mono text-xs mx-0.5 border border-white/10">{part.slice(1, -1)}</code>;
+                return <code key={i} className="bg-[#EAECEF] text-[#333333] px-1.5 py-0.5 rounded font-mono text-[13px] mx-0.5">{part.slice(1, -1)}</code>;
+            }
+            if (part.startsWith('【AI批注：') && part.endsWith('】')) {
+                return (
+                    <span key={i} className="block my-3 px-4 py-3 bg-[#E4E8EC] text-[#4A5568] text-[15px] rounded-xl border border-[#D1D9E0]/50 leading-relaxed shadow-sm">
+                        <strong className="text-[#2C3E50] mb-1 block text-[13px] opacity-80">💡 AI 批注</strong>
+                        {part.slice(6, -1)}
+                    </span>
+                );
             }
             return <span key={i}>{part}</span>;
         });
     };
 
-    // Block Renderer
     const renderBlock = (block: string, index: number, storedMath: string[], storedCode: string[]) => {
         const trimmed = block.trim();
         if (!trimmed) return <div key={index} className="h-4"></div>;
 
-        // 1. Restore Protected Math Block
         const mathMatch = trimmed.match(/^__BLOCK_MATH_(\d+)__$/);
         if (mathMatch) {
-            const id = parseInt(mathMatch[1]);
             return (
-                <div key={index} className="w-full text-center my-4 overflow-x-auto no-scrollbar py-3 bg-white/5 rounded-xl border border-white/5 shadow-inner">
-                    {renderMath(storedMath[id], true)}
+                <div key={index} className="w-full text-center my-4 overflow-x-auto no-scrollbar py-3 bg-black/5 rounded-xl border border-black/5 shadow-inner">
+                    {renderMath(storedMath[parseInt(mathMatch[1])], true)}
                 </div>
             );
         }
 
-        // 2. Restore Protected Code Block
         const codeMatch = trimmed.match(/^__BLOCK_CODE_(\d+)__$/);
         if (codeMatch) {
-            const id = parseInt(codeMatch[1]);
             return (
-                <pre key={index} className="bg-black/60 p-4 rounded-xl font-mono text-xs text-emerald-100 my-4 overflow-x-auto border border-white/10 shadow-inner whitespace-pre-wrap leading-relaxed">
-                    {storedCode[id]}
+                <pre key={index} className="bg-[#1E1E1E] p-4 rounded-xl font-mono text-xs text-emerald-400 my-4 overflow-x-auto shadow-inner whitespace-pre-wrap leading-relaxed">
+                    {storedCode[parseInt(codeMatch[1])]}
                 </pre>
             );
         }
 
-        // Headers
-        if (trimmed.startsWith('# ')) return <h1 key={index} className="text-3xl font-bold text-white mt-8 mb-6 pb-2 border-b-2 border-white/20 font-serif">{trimmed.slice(2)}</h1>;
-        if (trimmed.startsWith('## ')) return <h2 key={index} className="text-2xl font-bold text-emerald-200 mt-6 mb-4 font-serif">{trimmed.slice(3)}</h2>;
-        if (trimmed.startsWith('### ')) return <h3 key={index} className="text-xl font-bold text-emerald-300 mt-5 mb-2 font-serif">{trimmed.slice(4)}</h3>;
+        if (trimmed.startsWith('# ')) return <h1 key={index} className="text-3xl font-bold text-[#111111] mt-8 mb-6 pb-2 border-b-2 border-slate-300 font-sans">{trimmed.slice(2)}</h1>;
+        if (trimmed.startsWith('## ')) return <h2 key={index} className="text-2xl font-bold text-[#222222] mt-6 mb-4 font-sans">{trimmed.slice(3)}</h2>;
+        if (trimmed.startsWith('### ')) return <h3 key={index} className="text-xl font-bold text-[#333333] mt-5 mb-2 font-sans">{trimmed.slice(4)}</h3>;
 
-        // Blockquotes
         if (trimmed.startsWith('> ')) {
             return (
-                <div key={index} className="border-l-4 border-emerald-500/50 bg-white/5 p-4 my-3 rounded-r-xl text-emerald-100 italic">
+                <div key={index} className="bg-[#E4E8EC] border-l-4 border-[#8FA4B5] p-5 my-5 rounded-r-2xl text-[#3A4A5A] shadow-sm leading-[1.8] text-[16px]">
                     {parseInline(trimmed.slice(2))}
                 </div>
             );
         }
 
-        // Lists
         if (trimmed.match(/^[-•]\s/)) {
             return (
                 <div key={index} className="flex gap-3 my-2 pl-2">
-                    <span className="text-emerald-400 font-bold mt-1">•</span>
-                    <span className="text-white/90 leading-relaxed">{parseInline(trimmed.slice(2))}</span>
+                    <span className="text-[#8FA4B5] font-bold mt-1">•</span>
+                    <span className="text-[#333333] leading-relaxed">{parseInline(trimmed.slice(2))}</span>
                 </div>
             );
         }
         
-        // Numbered Lists
         const numMatch = trimmed.match(/^(\d+)\.\s+(.*)/);
         if (numMatch) {
              return (
                 <div key={index} className="flex gap-3 my-2 pl-2">
-                    <span className="text-emerald-400 font-bold font-mono mt-1">{numMatch[1]}.</span>
-                    <span className="text-white/90 leading-relaxed">{parseInline(numMatch[2])}</span>
+                    <span className="text-[#8FA4B5] font-bold font-mono mt-1">{numMatch[1]}.</span>
+                    <span className="text-[#333333] leading-relaxed">{parseInline(numMatch[2])}</span>
                 </div>
             );
         }
 
-        // Standard Paragraph
         return (
-            <div key={index} className="text-white/90 text-lg font-medium leading-loose tracking-wide font-serif mb-4 text-justify">
+            <div key={index} className="text-[#333333] text-[17px] font-normal leading-[1.9] tracking-wide font-sans mb-5 text-justify">
                 {parseInline(block)}
             </div>
         );
     };
-
-
 
     const isTableRow = (line: string) => {
         const trimmed = line.trim();
@@ -232,12 +218,12 @@ const BlackboardRenderer: React.FC<{ text: string, isTyping?: boolean, katexRend
         const bodyRows = (hasSeparator ? rows.slice(2) : rows.slice(1)).map(splitTableCells);
 
         return (
-            <div key={`table-${index}`} className="my-4 overflow-x-auto rounded-xl border border-white/10 bg-black/25">
+            <div key={`table-${index}`} className="my-4 overflow-x-auto rounded-xl border border-slate-200 bg-white/50">
                 <table className="w-full min-w-[360px] border-collapse text-sm text-left">
-                    <thead className="bg-white/10">
+                    <thead className="bg-slate-100">
                         <tr>
                             {header.map((cell, i) => (
-                                <th key={i} className="px-3 py-2 text-emerald-200 font-bold border-b border-white/10">
+                                <th key={i} className="px-3 py-2 text-[#222222] font-bold border-b border-slate-200">
                                     {parseInline(cell)}
                                 </th>
                             ))}
@@ -245,9 +231,9 @@ const BlackboardRenderer: React.FC<{ text: string, isTyping?: boolean, katexRend
                     </thead>
                     <tbody>
                         {bodyRows.map((row, rowIndex) => (
-                            <tr key={rowIndex} className="odd:bg-white/0 even:bg-white/[0.03]">
+                            <tr key={rowIndex} className="odd:bg-transparent even:bg-slate-50/50">
                                 {header.map((_, colIndex) => (
-                                    <td key={colIndex} className="px-3 py-2 text-white/90 border-t border-white/5 align-top leading-relaxed">
+                                    <td key={colIndex} className="px-3 py-2 text-[#333333] border-t border-slate-100 align-top leading-relaxed">
                                         {parseInline(row[colIndex] || '')}
                                     </td>
                                 ))}
@@ -259,28 +245,22 @@ const BlackboardRenderer: React.FC<{ text: string, isTyping?: boolean, katexRend
         );
     };
 
-    // --- Pre-processing Logic ---
-    // Protect blocks (Math $$...$$ and Code ```...```) from being split by newlines
     const storedMath: string[] = [];
     const storedCode: string[] = [];
     let processedText = text;
 
-    // 1. Extract Code Blocks
     processedText = processedText.replace(/```[\s\S]*?```/g, (match) => {
         const content = match.replace(/^```\w*\n?/, '').replace(/```$/, '');
         storedCode.push(content);
-        return `\n__BLOCK_CODE_${storedCode.length - 1}__\n`; // Add newlines to ensure it separates
+        return `\n__BLOCK_CODE_${storedCode.length - 1}__\n`;
     });
 
-    // 2. Extract Block Math ($$ ... $$)
-    // Note: LLMs sometimes output \[ ... \] or $$ ... $$. We try to catch $$...$$ mainly.
     processedText = processedText.replace(/\$\$[\s\S]*?\$\$/g, (match) => {
         const content = match.slice(2, -2).trim(); 
         storedMath.push(content);
         return `\n__BLOCK_MATH_${storedMath.length - 1}__\n`;
     });
 
-    // 3. Split by newlines + merge markdown table blocks
     const blocks = processedText.split('\n');
     const renderedBlocks: React.ReactNode[] = [];
 
@@ -302,17 +282,16 @@ const BlackboardRenderer: React.FC<{ text: string, isTyping?: boolean, katexRend
     
     return (
         <div className="space-y-1">
-            {/* FORCE WHITE COLOR FOR KATEX */}
             <style>{`
-                .katex { color: white !important; } 
+                .katex { color: #2C3E50 !important; } 
                 .katex-display { margin: 0.5em 0; }
-                .katex-html { color: white !important; }
+                .katex-html { color: #2C3E50 !important; }
             `}</style>
             
             {renderedBlocks}
             {isTyping && (
-                <div className="mt-4 animate-pulse flex items-center gap-2 text-emerald-500">
-                    <span className="w-2 h-5 bg-emerald-500"></span>
+                <div className="mt-4 animate-pulse flex items-center gap-2 text-[#8FA4B5]">
+                    <span className="w-2 h-5 bg-[#8FA4B5]"></span>
                     <span className="text-xs font-mono tracking-widest">WRITING...</span>
                 </div>
             )}
@@ -327,20 +306,17 @@ const StudyApp: React.FC = () => {
     const [activeCourse, setActiveCourse] = useState<StudyCourse | null>(null);
     const [selectedChar, setSelectedChar] = useState<CharacterProfile | null>(null);
     
-    // Classroom State
     const [classroomState, setClassroomState] = useState<'idle' | 'teaching' | 'q_and_a' | 'finished'>('idle');
     const [currentText, setCurrentText] = useState('');
     const [displayedText, setDisplayedText] = useState('');
     const [isTyping, setIsTyping] = useState(false);
     const [userQuestion, setUserQuestion] = useState('');
     const [chatHistory, setChatHistory] = useState<{role: 'user'|'assistant', content: string}[]>([]);
-    const [showChapterMenu, setShowChapterMenu] = useState(false); // Sidebar for history
-    const [showAssistant, setShowAssistant] = useState(true); // Toggle assistant visibility
+    const [showChapterMenu, setShowChapterMenu] = useState(false); 
+    const [showAssistant, setShowAssistant] = useState(true); 
     
-    // Logic Refs
-    const skipTypingRef = useRef(false); // New: Control to skip animation for cached content
+    const skipTypingRef = useRef(false); 
 
-    // Import State
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [isProcessing, setIsProcessing] = useState(false);
     const [processStatus, setProcessStatus] = useState('');
@@ -349,42 +325,35 @@ const StudyApp: React.FC = () => {
     const [tempPdfData, setTempPdfData] = useState<{name: string, text: string} | null>(null);
     const [katexRenderer, setKatexRenderer] = useState<KatexLike | null>(null);
 
-    // Study-specific API config (overrides main apiConfig when set)
     const [studyApi, setStudyApi] = useState<Partial<APIConfig>>({});
     const [showStudySettings, setShowStudySettings] = useState(false);
     const [localStudyUrl, setLocalStudyUrl] = useState('');
     const [localStudyKey, setLocalStudyKey] = useState('');
     const [localStudyModel, setLocalStudyModel] = useState('');
 
-    // Tutor prompt presets
     const [tutorPresets, setTutorPresets] = useState<StudyTutorPreset[]>([]);
     const [editingPreset, setEditingPreset] = useState<StudyTutorPreset | null>(null);
     const [presetName, setPresetName] = useState('');
     const [presetPrompt, setPresetPrompt] = useState('');
 
-    // Effective API config: study-specific overrides fall back to main config
     const effectiveApi: APIConfig = {
         baseUrl: studyApi.baseUrl || apiConfig.baseUrl,
         apiKey: studyApi.apiKey || apiConfig.apiKey,
         model: studyApi.model || apiConfig.model,
     };
 
-    // Delete Confirmation State
     const [deleteTarget, setDeleteTarget] = useState<StudyCourse | null>(null);
 
-    // Quiz State
     const [quizSession, setQuizSession] = useState<QuizSession | null>(null);
-    const [quizLoading, setQuizLoading] = useState<string>(''); // loading status text, empty = not loading
+    const [quizLoading, setQuizLoading] = useState<string>(''); 
     const [quizUserAnswers, setQuizUserAnswers] = useState<Record<string, string>>({});
     const [quizShowSetup, setQuizShowSetup] = useState(false);
     const [quizTypes, setQuizTypes] = useState<('choice' | 'true_false' | 'fill_blank')[]>(['choice', 'true_false', 'fill_blank']);
     const [quizCount, setQuizCount] = useState(8);
-    // Practice Book State
     const [allQuizzes, setAllQuizzes] = useState<QuizSession[]>([]);
     const [reviewingQuiz, setReviewingQuiz] = useState<QuizSession | null>(null);
     const [deleteQuizTarget, setDeleteQuizTarget] = useState<QuizSession | null>(null);
-    // Follow-up Q&A state
-    const [askingQuestionId, setAskingQuestionId] = useState<string>(''); // which question is being asked about
+    const [askingQuestionId, setAskingQuestionId] = useState<string>(''); 
     const [followUpInput, setFollowUpInput] = useState('');
     const [followUpLoading, setFollowUpLoading] = useState(false);
 
@@ -398,12 +367,8 @@ const StudyApp: React.FC = () => {
         }
     }, [activeCharacterId]);
 
-
     useEffect(() => {
-        loadKatex().then(setKatexRenderer).catch(() => {
-            // KaTeX is optional in dev if dependency is absent
-        });
-        // Load study-specific settings from localStorage
+        loadKatex().then(setKatexRenderer).catch(() => {});
         try {
             const savedStudyApi = localStorage.getItem('study_api_config');
             if (savedStudyApi) {
@@ -418,36 +383,33 @@ const StudyApp: React.FC = () => {
         } catch (e) { console.error('Failed to load study settings', e); }
     }, []);
 
-    // Refresh courses when returning to bookshelf
     useEffect(() => {
         if (mode === 'bookshelf') {
             loadCourses();
         }
     }, [mode]);
 
-    // Typewriter effect Logic
     useEffect(() => {
         if (!currentText) return;
 
-        // Skip Animation Check
         if (skipTypingRef.current) {
             setDisplayedText(currentText);
             setIsTyping(false);
-            skipTypingRef.current = false; // Reset
+            skipTypingRef.current = false; 
             return;
         }
 
         setIsTyping(true);
         setDisplayedText('');
         let i = 0;
-        const speed = 15; // Characters per tick
+        const speed = 15; 
         
         const timer = setInterval(() => {
             const chunk = currentText.substring(0, i + speed);
             setDisplayedText(chunk);
             i += speed;
             if (i >= currentText.length) {
-                setDisplayedText(currentText); // Ensure full text
+                setDisplayedText(currentText); 
                 clearInterval(timer);
                 setIsTyping(false);
             }
@@ -502,8 +464,6 @@ const StudyApp: React.FC = () => {
         savePresets(tutorPresets.filter(p => p.id !== id));
     };
 
-    // --- PDF Processing ---
-
     const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
@@ -532,12 +492,10 @@ const StudyApp: React.FC = () => {
                 fullText += pageText + '\n\n';
             }
 
-            // Scanned PDF Detection
             if (fullText.trim().length < 50 && pdf.numPages > 0) {
                 addToast('检测到文本极少，可能是扫描件/图片PDF。建议先进行OCR识别。', 'error');
             }
 
-            // Set temp data and open modal
             setTempPdfData({ name: file.name.replace('.pdf', ''), text: fullText });
             setImportPreference('');
             setIsProcessing(false);
@@ -573,8 +531,6 @@ const StudyApp: React.FC = () => {
 
     const generateCurriculum = async (title: string, text: string, preference: string): Promise<StudyCourse> => {
         if (!effectiveApi.apiKey) throw new Error('API Key missing');
-
-        // Truncate text for outline generation if too long
         const contextText = text.substring(0, 30000); 
 
         const prompt = `
@@ -614,7 +570,7 @@ For each chapter, provide a title, a brief summary of what it covers, and a diff
         return {
             id: `course-${Date.now()}`,
             title: title,
-            rawText: text, // Store full text locally
+            rawText: text, 
             chapters: json.chapters.map((c: any, i: number) => ({
                 id: `ch-${i}`,
                 title: c.title,
@@ -626,66 +582,62 @@ For each chapter, provide a title, a brief summary of what it covers, and a diff
             createdAt: Date.now(),
             coverStyle: GRADIENTS[Math.floor(Math.random() * GRADIENTS.length)],
             totalProgress: 0,
-            preference: preference // Save preference
+            preference: preference 
         };
     };
-
-    // --- Classroom Logic ---
 
     const startSession = (course: StudyCourse) => {
         setActiveCourse(course);
         setMode('classroom');
         setChatHistory([]);
         
-        // Find first incomplete chapter or stay on current if valid
         const nextIdx = course.chapters.findIndex(c => !c.isCompleted);
         const targetIdx = nextIdx === -1 ? 0 : nextIdx;
         
-        // Update index if needed
         if (targetIdx !== course.currentChapterIndex) {
              const updated = { ...course, currentChapterIndex: targetIdx };
              setActiveCourse(updated);
              DB.saveCourse(updated);
-             setCourses(prev => prev.map(c => c.id === updated.id ? updated : c)); // Sync
+             setCourses(prev => prev.map(c => c.id === updated.id ? updated : c)); 
         }
         
         handleTeach(course, targetIdx);
     };
 
-    // [MODIFIED]: buildStudyContext Removed. We now use ContextBuilder directly in handleTeach.
-
     const handleTeach = async (course: StudyCourse, chapterIdx: number, forceRegenerate: boolean = false) => {
         if (!selectedChar || !effectiveApi.apiKey) return;
-        
         const chapter = course.chapters[chapterIdx];
         
-        // 1. Check if we already have content (History Review) and NOT forcing regen
         if (chapter.content && !forceRegenerate) {
-            skipTypingRef.current = true; // Signal to skip animation for cached content
+            skipTypingRef.current = true; 
             setClassroomState('idle'); 
             setCurrentText(chapter.content);
             return;
         }
 
-        // 2. Generate New Content
-        skipTypingRef.current = false; // Reset skip
+        skipTypingRef.current = false; 
         setClassroomState('teaching');
         setCurrentText("正在准备教案...");
         
-        // Simple chunking strategy
         const totalLen = course.rawText.length;
         const chunkSize = Math.floor(totalLen / course.chapters.length);
         const start = chapterIdx * chunkSize;
-        const chunkText = course.rawText.substring(start, start + chunkSize + 2000); // Overlap
+        const chunkText = course.rawText.substring(start, start + chunkSize + 2000); 
 
         const callApi = async (personaContext: string, isFallback: boolean = false) => {
-            // 【修改后】干净的 Prompt，完全由你的前台控制
-            const prompt = `
-### [书籍原始素材]
-${course.rawText}
+            // [核心解绑修改] 让AI完全根据前台填写的提示词预设（course.preference）来执行
+            const prompt = `${personaContext}
 
-### [用户自定义陪读指令]
-${course.preference || '请开始陪读。'}
+### [Source Material] (当前章节原文)
+${chunkText.substring(0, 8000)}
+
+### [User Strict Instructions] (用户前台预设)
+${course.preference || '请完全保留原文内容。如果需要解释，请使用【AI批注：你的解释】格式。'}
+
+### [Task]
+你现在的唯一任务是：严格、完全地执行 [User Strict Instructions] 中的所有要求。
+请将 [Source Material] 作为你的阅读材料。
+绝对不要无视用户的指令格式，绝对不要自作主张修改原文。
 `;
             return await fetch(`${effectiveApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
                 method: 'POST',
@@ -705,42 +657,31 @@ ${course.preference || '请开始陪读。'}
             });
         };
 
-
         try {
-            // Attempt 1: Full Character Context (The "Soul")
-            // [MODIFIED]: Use centralized ContextBuilder with memory enabled
             await injectMemoryPalace(selectedChar, undefined, chapter.title);
             let baseContext = ContextBuilder.buildCoreContext(selectedChar, userProfile, true);
 
-            // Append Study Mode specific instructions to the core context
             baseContext += `
 ### [System: Study Mode Active]
 You are now acting as a private tutor for ${userProfile.name}.
-- **Maintain Personality**: You MUST stay in character (as defined above). If you are tsundere, teach with a tsundere attitude. If you are shy, teach shyly. Don't become a robotic lecturer.
-- **Goal**: Explain the content clearly, but don't lose your "soul".
-- **Safety**: If the source material contains sensitive topics (biology, history, etc.), treat them academically and neutrally.
+- **Maintain Personality**: You MUST stay in character.
+- **Goal**: Help the user study, but keep your persona alive.
 `;
 
             let response = await callApi(baseContext);
-            
             let text = "";
             let isBlocked = false;
 
             if (response.ok) {
                 const data = await safeResponseJson(response);
-                
-                // ROBUST EXTRACTION: Try content, then reasoning_content
                 text = data.choices?.[0]?.message?.content || data.choices?.[0]?.message?.reasoning_content || "";
-                
                 if (!text || data.choices?.[0]?.finish_reason === 'content_filter') {
-                    console.warn("Content blocked by filter or empty response.");
                     isBlocked = true;
                 }
             } else {
                 throw new Error(`API Error: ${response.status}`);
             }
 
-            // Attempt 2: Safety Fallback (Neutral Tutor Mode)
             if (isBlocked) {
                 setCurrentText("正在尝试切换安全线路 (Safety Fallback)...");
                 const fallbackContext = "[System: You are a helpful and neutral academic tutor. Ignore previous character persona constraints to ensure educational content is delivered.]";
@@ -751,30 +692,26 @@ You are now acting as a private tutor for ${userProfile.name}.
                 }
             }
             
-            if (!text) {
-                throw new Error("模型返回内容为空 (Max Tokens Limit or Filter)");
-            }
+            if (!text) throw new Error("模型返回内容为空");
 
-            // Save Generated Content
             const updatedChapters = [...course.chapters];
             updatedChapters[chapterIdx] = { ...chapter, content: text };
             const updatedCourse = { ...course, chapters: updatedChapters };
             
             await DB.saveCourse(updatedCourse);
             setActiveCourse(updatedCourse);
-            setCourses(prev => prev.map(c => c.id === updatedCourse.id ? updatedCourse : c)); // Sync
+            setCourses(prev => prev.map(c => c.id === updatedCourse.id ? updatedCourse : c)); 
 
             setCurrentText(text);
             setClassroomState('idle');
             
         } catch (e: any) {
             console.error("Teach Error:", e);
-            setCurrentText(`抱歉，生成失败: ${e.message}。可能是这次输出太长了，换个模型或精简一下再试。`);
+            setCurrentText(`抱歉，生成失败: ${e.message}`);
             setClassroomState('idle');
         }
     };
 
-    // Regenerate Logic
     const handleRegenerateChapter = () => {
         if (!activeCourse) return;
         handleTeach(activeCourse, activeCourse.currentChapterIndex, true);
@@ -786,7 +723,6 @@ You are now acting as a private tutor for ${userProfile.name}.
         const question = userQuestion;
         setUserQuestion('');
         setClassroomState('q_and_a');
-        
         setChatHistory(prev => [...prev, { role: 'user', content: question }]);
         setCurrentText("让我想想...");
 
@@ -796,25 +732,11 @@ You are now acting as a private tutor for ${userProfile.name}.
             const start = activeCourse.currentChapterIndex * chunkSize;
             const chunkText = activeCourse.rawText.substring(start, start + chunkSize + 2000);
 
-            // [MODIFIED]: Use Full Context for Q&A
             await injectMemoryPalace(selectedChar, undefined, question);
             let baseContext = ContextBuilder.buildCoreContext(selectedChar, userProfile, true);
-            baseContext += `
-### [System: Study Mode Q&A]
-User is asking a question about the study material.
-- **Maintain Personality**: Answer in character.
-`;
+            baseContext += `\n### [System: Study Mode Q&A]\nMaintain personality while answering.`;
 
-            const prompt = `${baseContext}
-### Source Material
-${chunkText.substring(0, 8000)}
-
-### User Question
-"${question}"
-
-### Task
-Answer the question based on the source material. Be helpful and encouraging (in character). Use Markdown.
-`;
+            const prompt = `${baseContext}\n### Source Material\n${chunkText.substring(0, 8000)}\n\n### User Question\n"${question}"`;
              const response = await fetch(`${effectiveApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${effectiveApi.apiKey}` },
@@ -847,7 +769,6 @@ Answer the question based on the source material. Be helpful and encouraging (in
         
         const nextIdx = activeCourse.currentChapterIndex + 1;
         const progress = Math.round((updatedChapters.filter(c => c.isCompleted).length / updatedChapters.length) * 100);
-        
         const newIndex = Math.min(nextIdx, updatedChapters.length - 1);
         
         const updatedCourse = {
@@ -859,18 +780,9 @@ Answer the question based on the source material. Be helpful and encouraging (in
         
         await DB.saveCourse(updatedCourse);
         setActiveCourse(updatedCourse);
-        setCourses(prev => prev.map(c => c.id === updatedCourse.id ? updatedCourse : c)); // Sync
+        setCourses(prev => prev.map(c => c.id === updatedCourse.id ? updatedCourse : c)); 
 
-        // Summarize to Memory (Fire & Forget)
-        // UPDATED PROMPT: First person perspective
-        const summaryPrompt = `
-[System: Memory Generation]
-Role: ${selectedChar.name} (Teacher)
-Action: Just finished teaching "${updatedChapters[activeCourse.currentChapterIndex].title}" to ${userProfile.name}.
-Task: Write a short, **first-person** diary entry (1 sentence) about this teaching session.
-Format: "今天给[User]讲了[Topic]..." or "Today I taught [User] about..."
-Note: Use "我" (I) to refer to yourself.
-`;
+        const summaryPrompt = `\n[System: Memory Generation]\nRole: ${selectedChar.name}\nTask: Short diary entry about teaching ${userProfile.name} "${updatedChapters[activeCourse.currentChapterIndex].title}". Use "我".\n`;
 
         fetch(`${effectiveApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
             method: 'POST',
@@ -882,7 +794,6 @@ Note: Use "我" (I) to refer to yourself.
             updateCharacter(selectedChar.id, { memories: [...(selectedChar.memories || []), newMem] });
         });
 
-        // 3. Trigger next logic
         if (nextIdx >= updatedChapters.length) {
             setCurrentText("恭喜！这本书我们已经学完了！真棒！");
             setClassroomState('finished');
@@ -896,7 +807,7 @@ Note: Use "我" (I) to refer to yourself.
         const updatedCourse = { ...activeCourse, currentChapterIndex: idx };
         setActiveCourse(updatedCourse);
         DB.saveCourse(updatedCourse);
-        setCourses(prev => prev.map(c => c.id === updatedCourse.id ? updatedCourse : c)); // Sync
+        setCourses(prev => prev.map(c => c.id === updatedCourse.id ? updatedCourse : c)); 
         handleTeach(updatedCourse, idx);
         setShowChapterMenu(false);
     };
@@ -913,8 +824,6 @@ Note: Use "我" (I) to refer to yourself.
         setDeleteTarget(null);
         addToast('课程已删除', 'success');
     };
-
-    // --- Quiz Logic ---
 
     const loadQuizzes = async () => {
         const list = await DB.getAllQuizzes();
@@ -946,47 +855,7 @@ Note: Use "我" (I) to refer to yourself.
         };
         const selectedTypeStr = quizTypes.map(t => typeLabels[t]).join('、');
 
-        const prompt = `### Task: Generate Quiz Questions
-You are creating a quiz based on the following study material.
-
-**Chapter**: "${chapter.title}"
-**Source Material**:
-${chunkText.substring(0, 10000)}
-
-**Requirements**:
-- Generate exactly ${quizCount} questions total
-- Question types to include: ${selectedTypeStr}
-- Mix the types roughly evenly among the selected types
-- Questions should test understanding, not just memorization
-- For choice questions: provide exactly 4 options labeled A/B/C/D
-- For true_false questions: answer should be "true" or "false"
-- For fill_blank questions: use "___" in the stem to indicate the blank, answer should be concise (1-5 words)
-- Provide a brief explanation for each answer
-
-### Output Format (Strict JSON, no markdown wrapping)
-{
-  "questions": [
-    {
-      "type": "choice",
-      "stem": "Which of the following...",
-      "options": ["A. ...", "B. ...", "C. ...", "D. ..."],
-      "answer": "B",
-      "explanation": "Because..."
-    },
-    {
-      "type": "true_false",
-      "stem": "Statement to judge...",
-      "answer": "true",
-      "explanation": "Because..."
-    },
-    {
-      "type": "fill_blank",
-      "stem": "___ is used for...",
-      "answer": "React",
-      "explanation": "Because..."
-    }
-  ]
-}`;
+        const prompt = `### Task: Generate Quiz Questions\nBase material:\n${chunkText.substring(0, 10000)}\nGenerate ${quizCount} questions of type: ${selectedTypeStr}. Output strictly in JSON format matching types.`;
 
         try {
             const response = await fetch(`${effectiveApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
@@ -1032,7 +901,6 @@ ${chunkText.substring(0, 10000)}
             setQuizSession(session);
             setQuizLoading('');
         } catch (e: any) {
-            console.error('Quiz generation error:', e);
             addToast(`试题生成失败: ${e.message}`, 'error');
             setQuizLoading('');
             setMode('classroom');
@@ -1047,7 +915,6 @@ ${chunkText.substring(0, 10000)}
         if (!quizSession || !selectedChar || !effectiveApi.apiKey) return;
         setQuizLoading('正在批改试卷...');
 
-        // Grade locally first
         const gradedQuestions = quizSession.questions.map(q => {
             const userAns = quizUserAnswers[q.id] || '';
             let isCorrect = false;
@@ -1056,7 +923,6 @@ ${chunkText.substring(0, 10000)}
             } else if (q.type === 'true_false') {
                 isCorrect = userAns.toLowerCase() === q.answer.toLowerCase();
             } else {
-                // fill_blank: fuzzy match (case insensitive, trimmed)
                 isCorrect = userAns.trim().toLowerCase() === q.answer.trim().toLowerCase();
             }
             return { ...q, userAnswer: userAns, isCorrect };
@@ -1065,10 +931,8 @@ ${chunkText.substring(0, 10000)}
         const score = gradedQuestions.filter(q => q.isCorrect).length;
         const scorePercent = Math.round((score / gradedQuestions.length) * 100);
 
-        // Build review prompt
         const resultsText = gradedQuestions.map((q, i) => {
-            const mark = q.isCorrect ? '正确' : '错误';
-            let line = `${i + 1}. [${mark}] ${q.stem}\n   用户答案: ${q.userAnswer || '(未作答)'}\n   正确答案: ${q.answer}`;
+            let line = `${i + 1}. [${q.isCorrect ? '正确' : '错误'}] ${q.stem}\n   用户: ${q.userAnswer || '(未作答)'}\n   正确: ${q.answer}`;
             if (q.explanation) line += `\n   解析: ${q.explanation}`;
             return line;
         }).join('\n\n');
@@ -1076,29 +940,7 @@ ${chunkText.substring(0, 10000)}
         await injectMemoryPalace(selectedChar, undefined, quizSession.chapterTitle);
         let baseContext = ContextBuilder.buildCoreContext(selectedChar, userProfile, true);
 
-        const reviewPrompt = `${baseContext}
-
-### [System: Quiz Review Mode]
-You just gave ${userProfile.name} a quiz on "${quizSession.chapterTitle}".
-They scored ${score}/${gradedQuestions.length} (${scorePercent}%).
-
-**Your task**: Review their answers one by one. For each question:
-- If they got it RIGHT: give a brief, entertaining acknowledgment (can be surprised, sarcastic, or genuinely happy depending on your personality)
-- If they got it WRONG: analyze WHY they might have gotten it wrong. Did they confuse similar concepts? Did they not read carefully? Make it entertaining and memorable — the goal is to make them laugh while learning. Ask them rhetorically what went wrong.
-- Stay in character throughout! A gentle character should be funny in a gentle way. A tsundere should be tsundere about it. A cool character should be cool about it.
-- The tone should be engaging and memorable — think "entertaining study buddy", not "cold grading machine"
-- Use their name naturally
-
-**Important**:
-- Review ALL questions in one response
-- Use markdown formatting
-- Number each review to match the question number
-- End with an overall summary comment about their performance
-
-### Quiz Results:
-${resultsText}
-
-### Your Review (in character):`;
+        const reviewPrompt = `${baseContext}\n\n### [Quiz Review Mode]\nReview performance: ${score}/${gradedQuestions.length} (${scorePercent}%).\nResults:\n${resultsText}\nReview in character format with markdown.`;
 
         try {
             const response = await fetch(`${effectiveApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
@@ -1112,9 +954,8 @@ ${resultsText}
                 })
             });
 
-            if (!response.ok) throw new Error(`API Error: ${response.status}`);
             const data = await safeResponseJson(response);
-            const reviewText = data.choices?.[0]?.message?.content || data.choices?.[0]?.message?.reasoning_content || '（批改失败，但分数已记录）';
+            const reviewText = data.choices?.[0]?.message?.content || data.choices?.[0]?.message?.reasoning_content || '（批改失败）';
 
             const gradedSession: QuizSession = {
                 ...quizSession,
@@ -1131,19 +972,9 @@ ${resultsText}
             setQuizLoading('');
             setMode('quiz_review');
         } catch (e: any) {
-            // Even if review fails, save the graded results
-            const gradedSession: QuizSession = {
-                ...quizSession,
-                questions: gradedQuestions,
-                score,
-                aiReview: `批改出错: ${e.message}`,
-                status: 'graded',
-                gradedAt: Date.now(),
-            };
+            const gradedSession: QuizSession = { ...quizSession, questions: gradedQuestions, score, aiReview: `错误: ${e.message}`, status: 'graded', gradedAt: Date.now() };
             await DB.saveQuiz(gradedSession);
             setQuizSession(gradedSession);
-            sendQuizCardToChat(gradedSession);
-            setQuizLoading('');
             setMode('quiz_review');
         }
     };
@@ -1162,18 +993,13 @@ ${resultsText}
             setMode('quiz_review');
             setReviewingQuiz(quiz);
         } else {
-            // Restore user answers
             const answers: Record<string, string> = {};
-            quiz.questions.forEach(q => {
-                if (q.userAnswer) answers[q.id] = String(q.userAnswer);
-            });
+            quiz.questions.forEach(q => { if (q.userAnswer) answers[q.id] = String(q.userAnswer); });
             setQuizUserAnswers(answers);
             setMode('quiz');
-            setQuizLoading('');
         }
     };
 
-    // Follow-up Q&A on a specific question
     const handleFollowUp = async (questionId: string) => {
         if (!followUpInput.trim() || !selectedChar || !effectiveApi.apiKey || !quizSession) return;
         const question = quizSession.questions.find(q => q.id === questionId);
@@ -1186,48 +1012,23 @@ ${resultsText}
         await injectMemoryPalace(selectedChar, undefined, userQ);
         let baseContext = ContextBuilder.buildCoreContext(selectedChar, userProfile, true);
 
-        const prompt = `${baseContext}
-
-### [System: Quiz Follow-up Q&A]
-The user just did a quiz and wants to ask about a specific question they got ${question.isCorrect ? 'right' : 'wrong'}.
-
-**Question**: ${question.stem}
-${question.options ? question.options.map(o => `  ${o}`).join('\n') : ''}
-**Correct Answer**: ${question.answer}
-**User's Answer**: ${question.userAnswer || '(未作答)'}
-**Explanation**: ${question.explanation}
-
-**User's follow-up question**: "${userQ}"
-
-Answer in character. Be helpful and clear. If they're confused about a concept, explain it with different examples or analogies. Keep it concise but thorough.`;
+        const prompt = `${baseContext}\nQuestion context: ${question.stem}\nUser asks: ${userQ}\nAnswer in character.`;
 
         try {
             const response = await fetch(`${effectiveApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${effectiveApi.apiKey}` },
-                body: JSON.stringify({
-                    model: effectiveApi.model,
-                    messages: [{ role: "user", content: prompt }],
-                    temperature: 0.7,
-                    max_tokens: 4000
-                })
+                body: JSON.stringify({ model: effectiveApi.model, messages: [{ role: "user", content: prompt }], temperature: 0.7, max_tokens: 4000 })
             });
-
-            if (!response.ok) throw new Error(`API Error: ${response.status}`);
             const data = await safeResponseJson(response);
             const answerText = data.choices?.[0]?.message?.content || data.choices?.[0]?.message?.reasoning_content || '（回答失败）';
 
             const note: QuizQuestionNote = { question: userQ, answer: answerText, timestamp: Date.now() };
-
-            // Update quizSession with the new note
-            const updatedQuestions = quizSession.questions.map(q =>
-                q.id === questionId ? { ...q, notes: [...(q.notes || []), note] } : q
-            );
+            const updatedQuestions = quizSession.questions.map(q => q.id === questionId ? { ...q, notes: [...(q.notes || []), note] } : q);
             const updatedSession = { ...quizSession, questions: updatedQuestions };
             await DB.saveQuiz(updatedSession);
             setQuizSession(updatedSession);
             if (reviewingQuiz) setReviewingQuiz(updatedSession);
-
         } catch (e: any) {
             addToast(`追问失败: ${e.message}`, 'error');
         } finally {
@@ -1235,33 +1036,13 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
         }
     };
 
-    // Send quiz result card to chat
     const sendQuizCardToChat = async (session: QuizSession) => {
         if (!selectedChar) return;
         const scorePercent = Math.round((session.score / session.totalQuestions) * 100);
-        const cardData = {
-            type: 'quiz_card',
-            courseTitle: session.courseTitle,
-            chapterTitle: session.chapterTitle,
-            score: session.score,
-            total: session.totalQuestions,
-            scorePercent,
-            quizId: session.id,
-            createdAt: session.createdAt,
-        };
-
-        await DB.saveMessage({
-            charId: selectedChar.id,
-            role: 'user',
-            type: 'score_card',
-            content: JSON.stringify(cardData),
-            metadata: { scoreCard: cardData },
-        });
+        const cardData = { type: 'quiz_card', courseTitle: session.courseTitle, chapterTitle: session.chapterTitle, score: session.score, total: session.totalQuestions, scorePercent, quizId: session.id, createdAt: session.createdAt };
+        await DB.saveMessage({ charId: selectedChar.id, role: 'user', type: 'score_card', content: JSON.stringify(cardData), metadata: { scoreCard: cardData } });
     };
 
-    // --- Render ---
-
-    // PRACTICE BOOK VIEW
     if (mode === 'practice_book') {
         return (
             <div className="h-full w-full bg-[#fdfbf7] flex flex-col font-sans relative">
@@ -1282,7 +1063,6 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                         <div className="flex flex-col items-center justify-center h-full text-slate-400">
                             <Notepad size={48} className="mb-4 text-slate-400" />
                             <span className="text-sm">还没有做过题哦</span>
-                            <span className="text-xs mt-1">在自习室的课堂中点击「刷题」开始吧</span>
                         </div>
                     ) : (
                         <div className="space-y-3">
@@ -1313,58 +1093,49 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                     )}
                 </div>
 
-                {/* Delete Quiz Confirmation */}
                 <Modal isOpen={!!deleteQuizTarget} title="删除试卷" onClose={() => setDeleteQuizTarget(null)} footer={
                     <div className="flex gap-2 w-full">
                         <button onClick={() => setDeleteQuizTarget(null)} className="flex-1 py-3 bg-slate-100 text-slate-500 font-bold rounded-2xl">取消</button>
-                        <button onClick={confirmDeleteQuiz} className="flex-1 py-3 bg-red-500 text-white font-bold rounded-2xl shadow-lg shadow-red-200">确认删除</button>
+                        <button onClick={confirmDeleteQuiz} className="flex-1 py-3 bg-red-500 text-white font-bold rounded-2xl">确认删除</button>
                     </div>
                 }>
                     <div className="py-4 text-center">
                         <p className="text-sm text-slate-600 mb-2">确定要删除这份试卷吗？</p>
-                        <p className="text-xs text-red-400">试卷和锐评内容将被永久删除。</p>
                     </div>
                 </Modal>
             </div>
         );
     }
 
-    // QUIZ REVIEW VIEW (after grading, or reviewing from practice book)
     if (mode === 'quiz_review' && quizSession) {
         const viewQuiz = reviewingQuiz || quizSession;
         return (
-            <div className="h-full w-full bg-[#2b2b2b] flex flex-col relative overflow-hidden font-sans">
-                <div className="absolute inset-0 opacity-5 pointer-events-none" style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)', backgroundSize: '40px 40px' }}></div>
-
-                {/* Header */}
-                <div className="bg-[#1a1a1a]/80 backdrop-blur-md px-4 pb-4 flex items-center justify-between z-30 border-b border-white/10" style={{ paddingTop: 'max(1rem, var(--safe-top))' }}>
-                    <button onClick={() => { setMode('classroom'); setReviewingQuiz(null); }} className="bg-black/30 text-white/80 p-2 rounded-full hover:bg-black/50 transition-colors border border-white/10">
+            <div className="h-full w-full bg-[#F3F1EB] flex flex-col relative overflow-hidden font-sans">
+                <div className="bg-white/80 backdrop-blur-md px-4 pb-4 flex items-center justify-between z-30 border-b border-slate-200" style={{ paddingTop: 'max(1rem, var(--safe-top))' }}>
+                    <button onClick={() => { setMode('classroom'); setReviewingQuiz(null); }} className="bg-white text-slate-700 p-2 rounded-full border border-slate-200 shadow-sm">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
                     </button>
                     <div className="text-center">
-                        <div className="text-white font-bold text-sm">批改结果</div>
-                        <div className={`text-xs font-bold mt-0.5 ${viewQuiz.score === viewQuiz.totalQuestions ? 'text-emerald-400' : viewQuiz.score >= viewQuiz.totalQuestions * 0.6 ? 'text-amber-400' : 'text-red-400'}`}>
-                            {viewQuiz.score}/{viewQuiz.totalQuestions} ({Math.round((viewQuiz.score / viewQuiz.totalQuestions) * 100)}%)
+                        <div className="text-slate-800 font-bold text-sm">批改结果</div>
+                        <div className={`text-xs font-bold mt-0.5 ${viewQuiz.score === viewQuiz.totalQuestions ? 'text-emerald-600' : viewQuiz.score >= viewQuiz.totalQuestions * 0.6 ? 'text-amber-600' : 'text-red-600'}`}>
+                            {viewQuiz.score}/{viewQuiz.totalQuestions}
                         </div>
                     </div>
                     <div className="w-9" />
                 </div>
 
-                {/* Content */}
                 <div className="flex-1 overflow-y-auto no-scrollbar p-6 pb-24 relative z-10">
-                    {/* Score Card */}
-                    <div className={`rounded-2xl p-6 mb-6 text-center ${viewQuiz.score === viewQuiz.totalQuestions ? 'bg-emerald-900/30 border border-emerald-500/30' : viewQuiz.score >= viewQuiz.totalQuestions * 0.6 ? 'bg-amber-900/30 border border-amber-500/30' : 'bg-red-900/30 border border-red-500/30'}`}>
-                        <div className="text-5xl font-bold text-white mb-2">{viewQuiz.score}<span className="text-2xl text-white/50">/{viewQuiz.totalQuestions}</span></div>
-                        <div className="text-sm text-white/60">{viewQuiz.chapterTitle}</div>
+                    <div className={`rounded-2xl p-6 mb-6 text-center ${viewQuiz.score === viewQuiz.totalQuestions ? 'bg-emerald-50 border border-emerald-200' : viewQuiz.score >= viewQuiz.totalQuestions * 0.6 ? 'bg-amber-50 border border-amber-200' : 'bg-red-50 border border-red-200'}`}>
+                        <div className="text-5xl font-bold text-slate-800 mb-2">{viewQuiz.score}<span className="text-2xl text-slate-400">/{viewQuiz.totalQuestions}</span></div>
+                        <div className="text-sm text-slate-600">{viewQuiz.chapterTitle}</div>
                     </div>
 
-                    {/* Questions Review */}
                     <div className="space-y-4 mb-6">
                         {viewQuiz.questions.map((q, i) => (
-                            <div key={q.id} className={`rounded-2xl p-4 border ${q.isCorrect ? 'bg-emerald-900/10 border-emerald-500/20' : 'bg-red-900/10 border-red-500/20'}`}>
+                            <div key={q.id} className={`rounded-2xl p-4 border bg-white ${q.isCorrect ? 'border-emerald-200' : 'border-red-200'}`}>
                                 <div className="flex items-start gap-2 mb-2">
-                                    <span className={`text-sm font-bold shrink-0 ${q.isCorrect ? 'text-emerald-400' : 'text-red-400'}`}>{q.isCorrect ? <Check size={16} weight="bold" /> : <X size={16} weight="bold" />}</span>
-                                    <span className="text-white/90 text-sm">{i + 1}. {q.stem}</span>
+                                    <span className={`text-sm font-bold shrink-0 ${q.isCorrect ? 'text-emerald-600' : 'text-red-600'}`}>{q.isCorrect ? <Check size={16} weight="bold" /> : <X size={16} weight="bold" />}</span>
+                                    <span className="text-slate-800 text-sm">{i + 1}. {q.stem}</span>
                                 </div>
                                 {q.options && (
                                     <div className="ml-6 space-y-1 mb-2">
@@ -1373,7 +1144,7 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                                             const isUserPick = q.userAnswer?.toUpperCase() === optLetter.toUpperCase();
                                             const isCorrectOpt = q.answer.toUpperCase() === optLetter.toUpperCase();
                                             return (
-                                                <div key={oi} className={`text-xs px-2 py-1 rounded ${isCorrectOpt ? 'text-emerald-300 bg-emerald-500/10' : isUserPick && !q.isCorrect ? 'text-red-300 bg-red-500/10' : 'text-white/50'}`}>
+                                                <div key={oi} className={`text-xs px-2 py-1 rounded ${isCorrectOpt ? 'text-emerald-700 bg-emerald-50' : isUserPick && !q.isCorrect ? 'text-red-700 bg-red-50' : 'text-slate-500'}`}>
                                                     {opt} {isCorrectOpt && !q.isCorrect && '← 正确答案'} {isUserPick && !q.isCorrect && '← 你的选择'}
                                                 </div>
                                             );
@@ -1382,19 +1153,18 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                                 )}
                                 {q.type !== 'choice' && (
                                     <div className="ml-6 text-xs space-y-1 mb-2">
-                                        <div className={`${q.isCorrect ? 'text-emerald-300' : 'text-red-300'}`}>你的答案: {q.userAnswer || '(未作答)'}</div>
-                                        {!q.isCorrect && <div className="text-emerald-300">正确答案: {q.answer}</div>}
+                                        <div className={`${q.isCorrect ? 'text-emerald-600' : 'text-red-600'}`}>你的答案: {q.userAnswer || '(未作答)'}</div>
+                                        {!q.isCorrect && <div className="text-emerald-600">正确答案: {q.answer}</div>}
                                     </div>
                                 )}
-                                {q.explanation && <div className="ml-6 text-[10px] text-white/40 mt-1">解析: {q.explanation}</div>}
+                                {q.explanation && <div className="ml-6 text-[11px] text-slate-400 mt-1">解析: {q.explanation}</div>}
 
-                                {/* Existing Notes */}
                                 {q.notes && q.notes.length > 0 && (
                                     <div className="ml-6 mt-3 space-y-2">
                                         {q.notes.map((note, ni) => (
-                                            <div key={ni} className="bg-white/5 rounded-xl p-3 border border-white/5">
-                                                <div className="text-[10px] text-amber-400 font-bold mb-1">Q: {note.question}</div>
-                                                <div className="text-xs text-white/70 leading-relaxed">
+                                            <div key={ni} className="bg-slate-50 rounded-xl p-3 border border-slate-200">
+                                                <div className="text-[10px] text-amber-600 font-bold mb-1">Q: {note.question}</div>
+                                                <div className="text-xs text-slate-700 leading-relaxed">
                                                     <BlackboardRenderer text={note.answer} katexRenderer={katexRenderer} />
                                                 </div>
                                             </div>
@@ -1402,7 +1172,6 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                                     </div>
                                 )}
 
-                                {/* Follow-up Button & Input */}
                                 <div className="ml-6 mt-2">
                                     {askingQuestionId === q.id ? (
                                         <div className="flex gap-2 items-center">
@@ -1411,22 +1180,21 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                                                 onChange={e => setFollowUpInput(e.target.value)}
                                                 onKeyDown={e => e.key === 'Enter' && handleFollowUp(q.id)}
                                                 placeholder="哪里不明白？"
-                                                className="flex-1 bg-white/10 rounded-lg px-3 py-1.5 text-xs text-white placeholder:text-white/30 outline-none border border-white/10 focus:border-amber-500/50"
+                                                className="flex-1 bg-slate-50 rounded-lg px-3 py-1.5 text-xs text-slate-800 outline-none border border-slate-200"
                                                 autoFocus
                                                 disabled={followUpLoading}
                                             />
                                             {followUpLoading ? (
-                                                <div className="w-6 h-6 border-2 border-amber-500 border-t-transparent rounded-full animate-spin shrink-0"></div>
+                                                <div className="w-4 h-4 border-2 border-amber-500 border-t-transparent rounded-full animate-spin"></div>
                                             ) : (
                                                 <>
-                                                    <button onClick={() => handleFollowUp(q.id)} disabled={!followUpInput.trim()} className="text-amber-400 text-xs font-bold px-2 py-1 hover:bg-white/5 rounded disabled:opacity-30">发送</button>
-                                                    <button onClick={() => { setAskingQuestionId(''); setFollowUpInput(''); }} className="text-white/30 text-xs px-1">取消</button>
+                                                    <button onClick={() => handleFollowUp(q.id)} disabled={!followUpInput.trim()} className="text-amber-600 text-xs font-bold px-2 py-1">发送</button>
+                                                    <button onClick={() => { setAskingQuestionId(''); setFollowUpInput(''); }} className="text-slate-400 text-xs">取消</button>
                                                 </>
                                             )}
                                         </div>
                                     ) : (
-                                        <button onClick={() => setAskingQuestionId(q.id)} className="text-[10px] text-amber-400/70 hover:text-amber-400 transition-colors flex items-center gap-1">
-                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3 h-3"><path strokeLinecap="round" strokeLinejoin="round" d="M8.625 12a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H8.25m4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H12m4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 0 1-2.555-.337A5.972 5.972 0 0 1 5.41 20.97a5.969 5.969 0 0 1-.474-.065 4.48 4.48 0 0 0 .978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25Z" /></svg>
+                                        <button onClick={() => setAskingQuestionId(q.id)} className="text-[11px] text-amber-600 hover:text-amber-700 flex items-center gap-1">
                                             追问
                                         </button>
                                     )}
@@ -1435,23 +1203,21 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                         ))}
                     </div>
 
-                    {/* AI Review */}
                     {viewQuiz.aiReview && (
                         <div className="mb-6">
                             <div className="flex items-center gap-2 mb-3">
-                                {selectedChar && <img src={selectedChar.avatar} className="w-8 h-8 rounded-full object-cover border-2 border-emerald-500/30" />}
-                                <span className="text-emerald-400 text-sm font-bold">{selectedChar?.name || '助教'} 的锐评</span>
+                                {selectedChar && <img src={selectedChar.avatar} className="w-8 h-8 rounded-full object-cover" />}
+                                <span className="text-slate-700 text-sm font-bold">{selectedChar?.name || '助教'} 的点评</span>
                             </div>
-                            <div className="bg-white/5 rounded-2xl p-5 border border-white/10">
+                            <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
                                 <BlackboardRenderer text={viewQuiz.aiReview} katexRenderer={katexRenderer} />
                             </div>
                         </div>
                     )}
                 </div>
 
-                {/* Bottom Bar */}
-                <div className="absolute bottom-0 w-full bg-[#1a1a1a]/95 backdrop-blur-xl border-t border-white/10 p-4 z-30 pb-safe">
-                    <button onClick={() => { setMode('classroom'); setReviewingQuiz(null); }} className="w-full h-12 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl font-bold shadow-lg shadow-emerald-900/30 active:scale-95 transition-all">
+                <div className="absolute bottom-0 w-full bg-white border-t border-slate-200 p-4 z-30 pb-safe">
+                    <button onClick={() => { setMode('classroom'); setReviewingQuiz(null); }} className="w-full h-12 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl font-bold shadow-md">
                         返回课堂
                     </button>
                 </div>
@@ -1459,25 +1225,22 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
         );
     }
 
-    // QUIZ ANSWERING VIEW
     if (mode === 'quiz') {
         return (
             <div className="h-full w-full bg-[#fdfbf7] flex flex-col font-sans relative">
-                {/* Header */}
                 <div className="bg-[#fdfbf7]/90 backdrop-blur-md border-b border-[#e5e5e5] shrink-0 sticky top-0 z-20" style={{ paddingTop: 'var(--safe-top)' }}>
                     <div className="flex items-center px-6 py-3">
                         <div className="flex justify-between items-center w-full">
                             <button onClick={() => {
-                                // Save progress before leaving
                                 if (quizSession && quizSession.status === 'in_progress') {
                                     const updated = { ...quizSession, questions: quizSession.questions.map(q => ({ ...q, userAnswer: quizUserAnswers[q.id] || q.userAnswer })) };
                                     DB.saveQuiz(updated);
                                 }
                                 setMode('classroom');
-                            }} className="p-2 -ml-2 rounded-full hover:bg-black/5 active:scale-90 transition-transform">
+                            }} className="p-2 -ml-2 rounded-full hover:bg-black/5">
                                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6 text-slate-600"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
                             </button>
-                            <span className="font-bold text-slate-800 text-sm tracking-wide">{quizSession?.chapterTitle || '做题中'}</span>
+                            <span className="font-bold text-slate-800 text-sm truncate max-w-[200px]">{quizSession?.chapterTitle || '做题中'}</span>
                             <div className="text-xs text-slate-400 font-bold">
                                 {Object.keys(quizUserAnswers).length}/{quizSession?.questions.length || 0}
                             </div>
@@ -1485,26 +1248,17 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                     </div>
                 </div>
 
-                {/* Loading State */}
                 {quizLoading ? (
                     <div className="flex-1 flex flex-col items-center justify-center gap-4">
-                        <div className="w-10 h-10 border-3 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
+                        <div className="w-8 h-8 border-3 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
                         <span className="text-sm text-slate-500 font-bold">{quizLoading}</span>
-                        {selectedChar && (
-                            <div className="flex items-center gap-2 mt-2">
-                                <img src={selectedChar.avatar} className="w-8 h-8 rounded-full object-cover" />
-                                <span className="text-xs text-slate-400">{selectedChar.name} 正在出题...</span>
-                            </div>
-                        )}
                     </div>
                 ) : quizSession ? (
                     <>
-                        {/* Questions */}
                         <div className="flex-1 overflow-y-auto no-scrollbar p-6 pb-32">
                             <div className="space-y-6">
                                 {quizSession.questions.map((q, i) => (
                                     <div key={q.id} className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100">
-                                        {/* Question Header */}
                                         <div className="flex items-start gap-2 mb-4">
                                             <span className="bg-emerald-100 text-emerald-700 text-xs font-bold px-2 py-0.5 rounded-full shrink-0">
                                                 {q.type === 'choice' ? '选择' : q.type === 'true_false' ? '判断' : '填空'}
@@ -1512,14 +1266,13 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                                             <span className="text-sm text-slate-800 font-medium leading-relaxed">{i + 1}. {q.stem}</span>
                                         </div>
 
-                                        {/* Answer Area */}
                                         {q.type === 'choice' && q.options && (
                                             <div className="space-y-2 ml-1">
                                                 {q.options.map((opt, oi) => {
                                                     const optLetter = opt.charAt(0);
                                                     const isSelected = (quizUserAnswers[q.id] || '').toUpperCase() === optLetter.toUpperCase();
                                                     return (
-                                                        <button key={oi} onClick={() => handleQuizAnswer(q.id, optLetter)} className={`w-full text-left px-4 py-3 rounded-xl text-sm transition-all ${isSelected ? 'bg-emerald-500 text-white font-bold shadow-sm' : 'bg-slate-50 text-slate-700 hover:bg-slate-100 active:scale-[0.98]'}`}>
+                                                        <button key={oi} onClick={() => handleQuizAnswer(q.id, optLetter)} className={`w-full text-left px-4 py-3 rounded-xl text-sm transition-all ${isSelected ? 'bg-emerald-600 text-white font-bold shadow-sm' : 'bg-slate-50 text-slate-700 hover:bg-slate-100'}`}>
                                                             {opt}
                                                         </button>
                                                     );
@@ -1532,8 +1285,8 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                                                 {[{ val: 'true', label: '正确' }, { val: 'false', label: '错误' }].map(opt => {
                                                     const isSelected = quizUserAnswers[q.id] === opt.val;
                                                     return (
-                                                        <button key={opt.val} onClick={() => handleQuizAnswer(q.id, opt.val)} className={`flex-1 py-3 rounded-xl text-sm font-bold transition-all ${isSelected ? (opt.val === 'true' ? 'bg-emerald-500 text-white' : 'bg-red-500 text-white') : 'bg-slate-50 text-slate-600 hover:bg-slate-100 active:scale-[0.98]'}`}>
-                                                            {opt.val === 'true' ? <CheckCircle size={16} weight="bold" className="inline" /> : <XCircle size={16} weight="bold" className="inline" />} {opt.label}
+                                                        <button key={opt.val} onClick={() => handleQuizAnswer(q.id, opt.val)} className={`flex-1 py-3 rounded-xl text-sm font-bold transition-all ${isSelected ? (opt.val === 'true' ? 'bg-emerald-600 text-white' : 'bg-red-500 text-white') : 'bg-slate-50 text-slate-600 hover:bg-slate-100'}`}>
+                                                            {opt.label}
                                                         </button>
                                                     );
                                                 })}
@@ -1545,7 +1298,7 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                                                 value={quizUserAnswers[q.id] || ''}
                                                 onChange={e => handleQuizAnswer(q.id, e.target.value)}
                                                 placeholder="输入你的答案..."
-                                                className="w-full bg-slate-50 rounded-xl px-4 py-3 text-sm focus:outline-emerald-500 border border-slate-200 ml-1"
+                                                className="w-full bg-slate-50 rounded-xl px-4 py-3 text-sm border border-slate-200 ml-1"
                                             />
                                         )}
                                     </div>
@@ -1553,14 +1306,9 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                             </div>
                         </div>
 
-                        {/* Submit Bar */}
                         <div className="absolute bottom-0 w-full bg-[#fdfbf7]/95 backdrop-blur-xl border-t border-slate-200 p-4 z-30 pb-safe">
-                            <button
-                                onClick={submitQuiz}
-                                disabled={!!quizLoading}
-                                className="w-full h-12 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl font-bold shadow-lg shadow-emerald-200 active:scale-95 transition-all disabled:opacity-50"
-                            >
-                                {quizLoading ? quizLoading : `交卷 (${Object.keys(quizUserAnswers).length}/${quizSession.questions.length})`}
+                            <button onClick={submitQuiz} className="w-full h-12 bg-emerald-600 text-white rounded-2xl font-bold shadow-md">
+                                交卷 ({Object.keys(quizUserAnswers).length}/{quizSession.questions.length})
                             </button>
                         </div>
                     </>
@@ -1575,15 +1323,15 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                 <div className="bg-[#fdfbf7]/90 backdrop-blur-md border-b border-[#e5e5e5] shrink-0 sticky top-0 z-20" style={{ paddingTop: 'var(--safe-top)' }}>
                     <div className="flex items-center px-6 py-3">
                     <div className="flex justify-between items-center w-full">
-                        <button onClick={closeApp} className="p-2 -ml-2 rounded-full hover:bg-black/5 active:scale-90 transition-transform">
+                        <button onClick={closeApp} className="p-2 -ml-2 rounded-full hover:bg-black/5">
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6 text-slate-600"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
                         </button>
                         <span className="font-bold text-slate-800 text-lg tracking-wide">自习室</span>
                         <div className="flex gap-1">
-                            <button onClick={() => { loadQuizzes(); setMode('practice_book'); }} className="p-2 rounded-full hover:bg-black/5 active:scale-90 transition-transform" title="练习册">
+                            <button onClick={() => { loadQuizzes(); setMode('practice_book'); }} className="p-2 rounded-full hover:bg-black/5" title="练习册">
                                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 text-slate-500"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 0 0 2.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 0 0-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 0 0 .75-.75 2.25 2.25 0 0 0-.1-.664m-5.8 0A2.251 2.251 0 0 1 13.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25ZM6.75 12h.008v.008H6.75V12Zm0 3h.008v.008H6.75V15Zm0 3h.008v.008H6.75V18Z" /></svg>
                             </button>
-                            <button onClick={() => setShowStudySettings(true)} className="p-2 -mr-2 rounded-full hover:bg-black/5 active:scale-90 transition-transform">
+                            <button onClick={() => setShowStudySettings(true)} className="p-2 -mr-2 rounded-full hover:bg-black/5">
                                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 text-slate-500"><path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a7.723 7.723 0 0 1 0 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 0 1 0-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28Z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /></svg>
                             </button>
                         </div>
@@ -1592,7 +1340,6 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                 </div>
 
                 <div className="p-6 flex-1 overflow-y-auto no-scrollbar">
-                    {/* Character Selector */}
                     <div className="mb-8">
                         <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">当前助教</h3>
                         <div className="flex gap-4 overflow-x-auto pb-2 no-scrollbar">
@@ -1610,7 +1357,7 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                     <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">我的课程</h3>
                     
                     <div className="grid grid-cols-2 gap-4">
-                        <button onClick={() => fileInputRef.current?.click()} className="aspect-[3/4] rounded-r-xl rounded-l-sm border-2 border-dashed border-slate-300 flex flex-col items-center justify-center gap-2 text-slate-400 hover:border-emerald-400 hover:text-emerald-500 transition-colors bg-white">
+                        <button onClick={() => fileInputRef.current?.click()} className="aspect-[3/4] rounded-r-xl rounded-l-sm border-2 border-dashed border-slate-300 flex flex-col items-center justify-center gap-2 text-slate-400 bg-white">
                             {isProcessing ? (
                                 <div className="text-center px-2">
                                     <div className="w-6 h-6 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
@@ -1627,7 +1374,7 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
 
                         {courses.map(course => (
                             <div key={course.id} onClick={() => startSession(course)} className="aspect-[3/4] rounded-r-xl rounded-l-sm shadow-md relative group cursor-pointer overflow-hidden transition-transform active:scale-95" style={{ background: course.coverStyle }}>
-                                <div className="absolute left-0 top-0 bottom-0 w-2 bg-black/10"></div> {/* Spine */}
+                                <div className="absolute left-0 top-0 bottom-0 w-2 bg-black/10"></div> 
                                 <div className="p-4 flex flex-col h-full text-white relative z-10">
                                     <div className="flex-1 font-serif font-bold text-lg leading-tight line-clamp-3 drop-shadow-md">{course.title}</div>
                                     <div className="mt-2">
@@ -1637,10 +1384,7 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                                         </div>
                                     </div>
                                 </div>
-                                <button 
-                                    onClick={(e) => requestDeleteCourse(e, course)} 
-                                    className="absolute top-2 right-2 bg-black/20 hover:bg-red-500 text-white w-7 h-7 rounded-full flex items-center justify-center backdrop-blur-md transition-all z-20"
-                                >
+                                <button onClick={(e) => requestDeleteCourse(e, course)} className="absolute top-2 right-2 bg-black/20 text-white w-7 h-7 rounded-full flex items-center justify-center z-20">
                                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
                                 </button>
                             </div>
@@ -1658,11 +1402,11 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                                 <label className="text-[10px] font-bold text-slate-400 uppercase mb-2 block">选择预设提示词</label>
                                 <div className="flex flex-wrap gap-2">
                                     {tutorPresets.map(p => (
-                                        <button key={p.id} onClick={() => setImportPreference(p.prompt)} className={`px-3 py-1.5 rounded-full text-xs font-bold transition-colors ${importPreference === p.prompt ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
+                                        <button key={p.id} onClick={() => setImportPreference(p.prompt)} className={`px-3 py-1.5 rounded-full text-xs font-bold transition-colors ${importPreference === p.prompt ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-600'}`}>
                                             {p.name}
                                         </button>
                                     ))}
-                                </div>
+                               </div>
                             </div>
                         )}
                         <div>
@@ -1671,35 +1415,27 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                                 value={importPreference}
                                 onChange={e => setImportPreference(e.target.value)}
                                 placeholder="例如：请用中文讲解，多用简单的比喻，针对数学公式详细推导..."
-                                className="w-full h-32 bg-slate-100 rounded-xl p-3 text-sm focus:outline-emerald-500 resize-none"
+                                className="w-full h-32 bg-slate-100 rounded-xl p-3 text-sm resize-none"
                             />
                         </div>
                     </div>
                 </Modal>
 
-                {/* Study Room Settings Modal */}
                 <Modal isOpen={showStudySettings} title="自习室设置" onClose={() => setShowStudySettings(false)}>
                     <div className="space-y-6">
-                        {/* Dedicated API Config */}
                         <div>
                             <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">专用 API（留空则使用全局设置）</h4>
                             <div className="space-y-2">
-                                <input value={localStudyUrl} onChange={e => setLocalStudyUrl(e.target.value)} placeholder="API Base URL" className="w-full bg-slate-100 rounded-xl p-3 text-sm focus:outline-emerald-500" />
-                                <input value={localStudyKey} onChange={e => setLocalStudyKey(e.target.value)} placeholder="API Key" type="password" className="w-full bg-slate-100 rounded-xl p-3 text-sm focus:outline-emerald-500" />
-                                <input value={localStudyModel} onChange={e => setLocalStudyModel(e.target.value)} placeholder="模型名称 (e.g. gpt-4o)" className="w-full bg-slate-100 rounded-xl p-3 text-sm focus:outline-emerald-500" />
+                                <input value={localStudyUrl} onChange={e => setLocalStudyUrl(e.target.value)} placeholder="API Base URL" className="w-full bg-slate-100 rounded-xl p-3 text-sm" />
+                                <input value={localStudyKey} onChange={e => setLocalStudyKey(e.target.value)} placeholder="API Key" type="password" className="w-full bg-slate-100 rounded-xl p-3 text-sm" />
+                                <input value={localStudyModel} onChange={e => setLocalStudyModel(e.target.value)} placeholder="模型名称" className="w-full bg-slate-100 rounded-xl p-3 text-sm" />
                                 <div className="flex gap-2">
                                     <button onClick={saveStudyApi} className="flex-1 py-2.5 bg-emerald-500 text-white font-bold rounded-xl text-xs">保存</button>
                                     <button onClick={clearStudyApi} className="py-2.5 px-4 bg-slate-200 text-slate-500 font-bold rounded-xl text-xs">清除</button>
                                 </div>
-                                {(studyApi.baseUrl || studyApi.model) && (
-                                    <div className="text-[10px] text-emerald-600 bg-emerald-50 rounded-lg p-2">
-                                        当前使用专用 API: {studyApi.model || effectiveApi.model}
-                                    </div>
-                                )}
                             </div>
                         </div>
 
-                        {/* Tutor Prompt Presets */}
                         <div>
                             <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">提示词预设</h4>
                             {tutorPresets.length > 0 && (
@@ -1721,8 +1457,8 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                                 </div>
                             )}
                             <div className="space-y-2 bg-slate-100 rounded-xl p-3">
-                                <input value={presetName} onChange={e => setPresetName(e.target.value)} placeholder="预设名称（如：数学辅导）" className="w-full bg-white rounded-lg p-2.5 text-sm focus:outline-emerald-500" />
-                                <textarea value={presetPrompt} onChange={e => setPresetPrompt(e.target.value)} placeholder="提示词内容（如：请用中文讲解，多用简单的比喻...）" className="w-full bg-white rounded-lg p-2.5 text-sm focus:outline-emerald-500 resize-none h-24" />
+                                <input value={presetName} onChange={e => setPresetName(e.target.value)} placeholder="预设名称（如：数学辅导）" className="w-full bg-white rounded-lg p-2.5 text-sm" />
+                                <textarea value={presetPrompt} onChange={e => setPresetPrompt(e.target.value)} placeholder="提示词内容..." className="w-full bg-white rounded-lg p-2.5 text-sm resize-none h-24" />
                                 <button onClick={handleSavePreset} disabled={!presetName.trim() || !presetPrompt.trim()} className="w-full py-2.5 bg-emerald-500 text-white font-bold rounded-xl text-xs disabled:opacity-40">
                                     {editingPreset ? '更新预设' : '添加预设'}
                                 </button>
@@ -1734,66 +1470,55 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                     </div>
                 </Modal>
 
-                {/* Delete Confirmation Modal */}
-                <Modal 
-                    isOpen={!!deleteTarget} 
-                    title="删除课程" 
-                    onClose={() => setDeleteTarget(null)} 
-                    footer={
+                <Modal isOpen={!!deleteTarget} title="删除课程" onClose={() => setDeleteTarget(null)} footer={
                         <div className="flex gap-2 w-full">
                             <button onClick={() => setDeleteTarget(null)} className="flex-1 py-3 bg-slate-100 text-slate-500 font-bold rounded-2xl">取消</button>
-                            <button onClick={confirmDeleteCourse} className="flex-1 py-3 bg-red-500 text-white font-bold rounded-2xl shadow-lg shadow-red-200">确认删除</button>
+                            <button onClick={confirmDeleteCourse} className="flex-1 py-3 bg-red-500 text-white font-bold rounded-2xl shadow-lg">确认删除</button>
                         </div>
                     }
                 >
                     <div className="py-4 text-center">
                         <p className="text-sm text-slate-600 mb-2">确定要删除课程 <br/><span className="font-bold text-slate-800">"{deleteTarget?.title}"</span> 吗？</p>
-                        <p className="text-xs text-red-400">删除后无法恢复，学习进度将丢失。</p>
                     </div>
                 </Modal>
             </div>
         );
     }
 
-    // CLASSROOM VIEW
+    // CLASSROOM VIEW (整体换肤为 Claude 暖白/浅灰高级底色，写死阅读器配色)
     return (
-        <div className="h-full w-full bg-[#2b2b2b] flex flex-col relative overflow-hidden font-sans">
-            
-            {/* Background Texture - Board */}
-            <div className="absolute inset-0 opacity-5 pointer-events-none" style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)', backgroundSize: '40px 40px' }}></div>
+        <div className="h-full w-full bg-[#F3F1EB] flex flex-col relative overflow-hidden font-sans">
+            <div className="absolute inset-0 opacity-[0.03] pointer-events-none" style={{ backgroundImage: 'linear-gradient(rgba(0,0,0,1) 1px, transparent 1px), linear-gradient(90deg, rgba(0,0,0,1) 1px, transparent 1px)', backgroundSize: '40px 40px' }}></div>
 
-            {/* Header Overlay */}
             <div className="absolute top-0 w-full px-4 pb-4 flex justify-between z-30 pointer-events-none" style={{ paddingTop: 'max(1rem, var(--safe-top))' }}>
-                <button onClick={() => setMode('bookshelf')} className="bg-black/30 text-white/80 p-2 rounded-full backdrop-blur-md hover:bg-black/50 transition-colors pointer-events-auto border border-white/10">
+                <button onClick={() => setMode('bookshelf')} className="bg-white/60 text-slate-700 p-2 rounded-full backdrop-blur-md hover:bg-white/80 pointer-events-auto border border-slate-200/50 shadow-sm">
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
                 </button>
                 <div className="flex gap-2">
-                    <div onClick={() => setShowChapterMenu(true)} className="bg-black/30 text-white/90 px-4 py-1.5 rounded-full backdrop-blur-md text-xs font-bold border border-white/10 shadow-sm pointer-events-auto cursor-pointer flex items-center gap-2 hover:bg-black/50">
+                    <div onClick={() => setShowChapterMenu(true)} className="bg-white/60 text-slate-700 px-4 py-1.5 rounded-full backdrop-blur-md text-xs font-bold border border-slate-200/50 shadow-sm pointer-events-auto cursor-pointer flex items-center gap-2 hover:bg-white/80">
                         <span className="truncate max-w-[150px]">{activeCourse?.chapters[activeCourse.currentChapterIndex]?.title}</span>
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3 h-3"><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" /></svg>
                     </div>
-                    {/* Character Visibility Toggle */}
-                    <button onClick={() => setShowAssistant(!showAssistant)} className={`bg-black/30 p-2 rounded-full backdrop-blur-md border border-white/10 pointer-events-auto transition-colors ${showAssistant ? 'text-emerald-400' : 'text-white/40'}`}>
+                    <button onClick={() => setShowAssistant(!showAssistant)} className={`bg-white/60 p-2 rounded-full backdrop-blur-md border border-slate-200/50 shadow-sm pointer-events-auto transition-colors ${showAssistant ? 'text-emerald-600' : 'text-slate-400'}`}>
                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5"><path d="M10 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM3.465 14.493a1.23 1.23 0 0 0 .41 1.412A9.957 9.957 0 0 0 10 18c2.31 0 4.438-.784 6.131-2.1.43-.333.604-.903.408-1.41a7.002 7.002 0 0 0-13.074.003Z" /></svg>
                     </button>
                 </div>
             </div>
 
-            {/* Chapter Menu Sidebar */}
             {showChapterMenu && (
                 <div className="absolute inset-0 z-50 flex">
-                    <div className="flex-1 bg-black/50 backdrop-blur-sm" onClick={() => setShowChapterMenu(false)}></div>
-                    <div className="w-64 bg-slate-900 border-l border-white/10 h-full flex flex-col p-4 animate-slide-in-right">
-                        <h3 className="text-white font-bold text-sm mb-4 uppercase tracking-widest">课程目录</h3>
+                    <div className="flex-1 bg-black/30 backdrop-blur-sm" onClick={() => setShowChapterMenu(false)}></div>
+                    <div className="w-64 bg-white border-l border-slate-200 h-full flex flex-col p-4 shadow-xl">
+                        <h3 className="text-slate-800 font-bold text-sm mb-4 uppercase tracking-widest">课程目录</h3>
                         <div className="flex-1 overflow-y-auto no-scrollbar space-y-2">
                             {activeCourse?.chapters.map((ch, idx) => (
                                 <button 
                                     key={ch.id} 
                                     onClick={() => jumpToChapter(idx)}
-                                    className={`w-full text-left p-3 rounded-xl text-xs transition-all ${idx === activeCourse.currentChapterIndex ? 'bg-emerald-600 text-white font-bold' : 'text-slate-400 hover:bg-white/5'}`}
+                                    className={`w-full text-left p-3 rounded-xl text-xs transition-all ${idx === activeCourse.currentChapterIndex ? 'bg-emerald-600 text-white font-bold shadow-md' : 'text-slate-600 hover:bg-slate-100'}`}
                                 >
                                     <div className="flex items-center gap-2">
-                                        {ch.isCompleted ? <Check size={14} weight="bold" className="text-emerald-400" /> : <span className="w-2 h-2 rounded-full bg-slate-600"></span>}
+                                        {ch.isCompleted ? <Check size={14} weight="bold" className={idx === activeCourse.currentChapterIndex ? "text-white" : "text-emerald-600"} /> : <span className="w-2 h-2 rounded-full bg-slate-300"></span>}
                                         {ch.title}
                                     </div>
                                 </button>
@@ -1803,57 +1528,54 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                 </div>
             )}
 
-            {/* Main Text Content - Layout Optimized (Removed padding-right to allow full width) */}
-            <div className="flex-1 overflow-y-auto no-scrollbar p-6 pt-20 pb-32 relative z-10">
+            <div className="flex-1 overflow-y-auto no-scrollbar p-6 pt-24 pb-32 relative z-10">
                 <div className="max-w-[100%]">
                     <BlackboardRenderer text={displayedText} isTyping={isTyping} katexRenderer={katexRenderer} />
                 </div>
             </div>
 
-            {/* Character Sprite - Toggable */}
             {showAssistant && (
-                <div className="absolute bottom-20 right-[-20px] w-[160px] h-[220px] z-20 pointer-events-none flex items-end justify-center transition-all duration-500 animate-slide-in-right" style={{ transform: isTyping ? 'scale(1.05)' : 'scale(1)', opacity: isTyping || classroomState === 'teaching' ? 1 : 0.8 }}>
+                <div className="absolute bottom-20 right-[-20px] w-[160px] h-[220px] z-20 pointer-events-none flex items-end justify-center transition-all duration-500" style={{ transform: isTyping ? 'scale(1.05)' : 'scale(1)', opacity: isTyping || classroomState === 'teaching' ? 1 : 0.8 }}>
                      <img 
                         src={currentSprite} 
-                        className="max-h-full max-w-full object-contain drop-shadow-[0_5px_15px_rgba(0,0,0,0.5)]"
+                        className="max-h-full max-w-full object-contain drop-shadow-[0_5px_15px_rgba(0,0,0,0.2)]"
                     />
                 </div>
             )}
 
-            {/* Controls Bar */}
-            <div className="absolute bottom-0 w-full bg-[#1a1a1a]/95 backdrop-blur-xl border-t border-white/10 p-4 z-30 pb-safe">
+            <div className="absolute bottom-0 w-full bg-[#F3F1EB]/95 backdrop-blur-xl border-t border-slate-200/60 p-4 z-30 pb-safe">
                 <div className="flex gap-3">
                     {classroomState === 'teaching' || isTyping ? (
-                        <div className="w-full h-12 flex items-center justify-center text-white/50 text-sm animate-pulse font-mono tracking-widest">
+                        <div className="w-full h-12 flex items-center justify-center text-slate-400 text-sm animate-pulse font-mono tracking-widest">
                             LECTURING...
                         </div>
                     ) : classroomState === 'finished' ? (
-                        <button onClick={() => setMode('bookshelf')} className="flex-1 h-12 bg-emerald-500 hover:bg-emerald-400 text-white rounded-2xl font-bold shadow-lg shadow-emerald-900/20 active:scale-95 transition-all">
+                        <button onClick={() => setMode('bookshelf')} className="flex-1 h-12 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl font-bold shadow-lg active:scale-95 transition-all">
                             完成课程
                         </button>
                     ) : classroomState === 'q_and_a' ? (
-                        <div className="w-full bg-white/10 rounded-2xl p-1 flex items-center border border-white/10">
+                        <div className="w-full bg-white rounded-2xl p-1 flex items-center border border-slate-200 shadow-sm">
                             <input 
                                 value={userQuestion}
                                 onChange={e => setUserQuestion(e.target.value)}
                                 placeholder="输入你的问题..."
-                                className="flex-1 bg-transparent px-4 py-2 text-white text-sm outline-none placeholder:text-white/30"
+                                className="flex-1 bg-transparent px-4 py-2 text-slate-800 text-sm outline-none placeholder:text-slate-400"
                                 autoFocus
                             />
-                            <button onClick={handleAskQuestion} className="bg-emerald-500 text-white px-5 py-2 rounded-xl text-xs font-bold ml-2 shadow-sm">发送</button>
+                            <button onClick={handleAskQuestion} className="bg-emerald-600 text-white px-5 py-2 rounded-xl text-xs font-bold ml-2 shadow-sm hover:bg-emerald-500">发送</button>
                         </div>
                     ) : (
                         <>
-                            <button onClick={handleRegenerateChapter} className="w-12 h-12 bg-white/5 hover:bg-white/10 text-slate-400 rounded-2xl font-bold border border-white/10 active:scale-95 transition-all flex items-center justify-center" title="重新生成本章">
-                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" /></svg>
+                            <button onClick={handleRegenerateChapter} className="w-12 h-12 bg-white hover:bg-slate-50 text-slate-500 rounded-2xl font-bold border border-slate-200 active:scale-95 transition-all flex items-center justify-center shadow-sm" title="重新生成本章">
+                                <svg xmlns="http://www.w3.org/2000/xl" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" /></svg>
                             </button>
-                            <button onClick={() => setClassroomState('q_and_a')} className="w-12 h-12 bg-white/10 hover:bg-white/20 text-white rounded-2xl font-bold border border-white/10 active:scale-95 transition-all flex items-center justify-center">
+                            <button onClick={() => setClassroomState('q_and_a')} className="w-12 h-12 bg-white hover:bg-slate-50 text-slate-600 rounded-2xl font-bold border border-slate-200 active:scale-95 transition-all flex items-center justify-center shadow-sm">
                                 <Hand size={24} />
                             </button>
-                            <button onClick={openQuizSetup} className="w-12 h-12 bg-amber-600/80 hover:bg-amber-500 text-white rounded-2xl font-bold border border-amber-400/30 active:scale-95 transition-all flex items-center justify-center" title="刷题">
+                            <button onClick={openQuizSetup} className="w-12 h-12 bg-amber-500 hover:bg-amber-400 text-white rounded-2xl font-bold active:scale-95 transition-all flex items-center justify-center shadow-md shadow-amber-500/10" title="刷题">
                                 <Notepad size={24} />
                             </button>
-                            <button onClick={handleFinishChapter} className="flex-1 h-12 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl font-bold shadow-lg shadow-emerald-900/30 active:scale-95 transition-all flex items-center justify-center gap-2">
+                            <button onClick={handleFinishChapter} className="flex-1 h-12 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl font-bold shadow-md active:scale-95 transition-all flex items-center justify-center gap-2">
                                 下一章 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" /></svg>
                             </button>
                         </>
@@ -1861,9 +1583,8 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                 </div>
             </div>
 
-            {/* Quiz Setup Modal */}
             <Modal isOpen={quizShowSetup} title="刷题设置" onClose={() => setQuizShowSetup(false)} footer={
-                <button onClick={generateQuiz} disabled={quizTypes.length === 0} className="w-full py-3 bg-amber-500 text-white font-bold rounded-2xl disabled:opacity-40">
+                <button onClick={generateQuiz} disabled={quizTypes.length === 0} className="w-full py-3 bg-amber-500 text-white font-bold rounded-2xl disabled:opacity-40 shadow-md">
                     开始出题
                 </button>
             }>
@@ -1878,7 +1599,7 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                             {([['choice', '选择题'], ['true_false', '判断题'], ['fill_blank', '填空题']] as const).map(([val, label]) => {
                                 const isOn = quizTypes.includes(val);
                                 return (
-                                    <button key={val} onClick={() => setQuizTypes(prev => isOn ? prev.filter(t => t !== val) : [...prev, val])} className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${isOn ? 'bg-amber-500 text-white' : 'bg-slate-100 text-slate-500'}`}>
+                                    <button key={val} onClick={() => setQuizTypes(prev => isOn ? prev.filter(t => t !== val) : [...prev, val])} className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${isOn ? 'bg-amber-500 text-white shadow-sm' : 'bg-slate-100 text-slate-500'}`}>
                                         {label}
                                     </button>
                                 );
@@ -1900,3 +1621,4 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
 };
 
 export default StudyApp;
+
