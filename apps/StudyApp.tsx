@@ -20,7 +20,7 @@ type KatexLike = {
 let pdfjsPromise: Promise<PdfJsLike> | null = null;
 let katexPromise: Promise<KatexLike> | null = null;
 
-// ============ 从 book.py 移植过来的分段逻辑 ============
+// ============ 分段逻辑 ============
 const SEGMENT_MAX_CHARS = 4000;
 
 interface SegmentMeta {
@@ -62,11 +62,20 @@ function computeSegments(paragraphs: string[]): SegmentMeta[] {
     return segments;
 }
 
-function buildNumberedText(paragraphs: string[], start: number, end: number): string {
+function buildNumberedTextForAI(paragraphs: string[], start: number, end: number): string {
     return paragraphs
         .slice(start, end + 1)
         .map((p, idx) => `【P${start + idx}】${p.trim()}`)
         .join('\n\n');
+}
+
+function buildDisplayText(paragraphs: string[], seg: { start: number; end: number }, annotation: string): string {
+    const textParts: string[] = [];
+    for (let i = seg.start; i <= seg.end; i++) {
+        textParts.push(paragraphs[i]);
+    }
+    const textContent = textParts.join('\n\n');
+    return `${textContent}\n\n---\n\n## 📝 批注\n\n${annotation}`;
 }
 // ============ 分段逻辑结束 ============
 
@@ -226,7 +235,7 @@ const BlackboardRenderer: React.FC<{ text: string, isTyping?: boolean, katexRend
         }
 
         return (
-            <div key={index} className="text-slate-800 text-lg font-medium leading-loose tracking-wide font-serif mb-4 text-justify">
+            <div key={index} className="text-slate-800 text-lg font-medium leading-loose tracking-wide font-serif mb-4 text-justify whitespace-pre-wrap">
                 {parseInline(block)}
             </div>
         );
@@ -334,6 +343,10 @@ const BlackboardRenderer: React.FC<{ text: string, isTyping?: boolean, katexRend
         </div>
     );
 };
+
+// ============================================================
+// StudyApp 主组件
+// ============================================================
 const StudyApp: React.FC = () => {
     const { closeApp, characters, activeCharacterId, apiConfig, addToast, userProfile, updateCharacter } = useOS();
     const [mode, setMode] = useState<'bookshelf' | 'classroom' | 'quiz' | 'quiz_review' | 'practice_book'>('bookshelf');
@@ -662,33 +675,50 @@ For each chapter, provide a title, a brief summary of what it covers, and a diff
         handleTeach(course, targetIdx);
     };
 
-    // 实际执行教学（带编号原文）
+    // ============================================================
+    // AI 只生成批注，原文由前端渲染
+    // ============================================================
     const doTeachWithNumberedText = async (course: StudyCourse, chapterIdx: number, numberedText: string, forceRegenerate: boolean, segIdx: number) => {
         if (!selectedChar || !effectiveApi.apiKey) return;
         
         const chapter = course.chapters[chapterIdx];
+        const paragraphs = chapter.paragraphs || [];
+        const seg = chapter.segmentsMeta?.[segIdx];
 
+        // 如果已经生成且不是强制刷新，直接显示
+        if (chapter.content && !forceRegenerate) {
+            skipTypingRef.current = true;
+            setClassroomState('idle');
+            setCurrentText(chapter.content);
+            return;
+        }
+
+        setClassroomState('teaching');
+        setCurrentText("正在生成批注...");
+
+        // 构建批注 prompt（只让 AI 写批注，不输出原文）
         const userInstruction = course.preference || 
-            `请遵循以下格式：
-[1] 请完整保留原文（保留【P0】等编号标记）；
-[2] 在原文下方，开启你的深度助教模式，请对引用的原文段落进行具体的、有启发性的拆解。
-你可以引用【P0】、【P1】等编号来指代具体段落。`;
+            `请对上面的原文段落进行批注。每条批注 20~50 字，用 > 引用块格式输出。不要复述或总结原文。`;
 
         await injectMemoryPalace(selectedChar, undefined, chapter.title);
         let baseContext = ContextBuilder.buildCoreContext(selectedChar, userProfile, true);
 
         baseContext += `
-### [System: Study Mode Active - 原文沉浸式阅读]
-你现在是一位陪读导师。用户希望完整阅读原文，你的角色是辅助性的——在原文旁边或下方提供批注。
+### [系统指令]
+你是一位陪读导师。用户正在阅读原文，你只需要在原文下方提供批注。
 
-### [最高指令（来自用户的提示词预设，请严格遵守）]
-${userInstruction}
-
-### [原文（请逐字逐句完整保留，不得删改任何一个字，保留【P】编号）]
+### [原文（仅供你阅读参考，不需要你输出）]
 ${numberedText}
 
-### [执行要求]
-请严格按照上述"最高指令"执行。如果指令要求"完整保留原文"，请逐字逐句输出，不得删改。在原文之后，附上你的拆解。`;
+### [任务]
+${userInstruction}
+
+### [输出要求]
+- 只输出批注，不要输出原文。
+- 每条批注用 \`> \` 开头。
+- 批注要具体、有启发性，不要空泛。
+- 保持你的人设性格。
+`;
 
         const response = await fetch(`${effectiveApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
             method: 'POST',
@@ -697,7 +727,7 @@ ${numberedText}
                 model: effectiveApi.model,
                 messages: [{ role: "user", content: baseContext }],
                 temperature: 0.7,
-                max_tokens: 4000,
+                max_tokens: 8000,
                 safetySettings: [
                     { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
                     { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
@@ -716,22 +746,20 @@ ${numberedText}
         }
 
         const data = await safeResponseJson(response);
-        let text = data.choices?.[0]?.message?.content || data.choices?.[0]?.message?.reasoning_content || "（内容为空）";
+        let annotationText = data.choices?.[0]?.message?.content || data.choices?.[0]?.message?.reasoning_content || "（批注为空）";
         
-        if (!text) {
-            setCurrentText("模型返回内容为空，请重试。");
-            setClassroomState('idle');
-            return;
-        }
+        // 构建最终显示内容：原文（前端渲染）+ 批注（AI 生成）
+        const displayText = buildDisplayText(paragraphs, seg!, annotationText);
 
+        // 保存到章节
         const updatedChapters = [...course.chapters];
-        updatedChapters[chapterIdx] = { ...chapter, content: text, currentSegmentIndex: segIdx };
+        updatedChapters[chapterIdx] = { ...chapter, content: displayText, currentSegmentIndex: segIdx };
         const updatedCourse = { ...course, chapters: updatedChapters };
         await DB.saveCourse(updatedCourse);
         setActiveCourse(updatedCourse);
         setCourses(prev => prev.map(c => c.id === updatedCourse.id ? updatedCourse : c));
 
-        setCurrentText(text);
+        setCurrentText(displayText);
         setClassroomState('idle');
     };
 
@@ -742,25 +770,26 @@ ${numberedText}
         const chapter = course.chapters[chapterIdx];
 
         const userInstruction = course.preference || 
-            `请遵循以下格式：
-[1] 请完整保留原文；
-[2] 在原文下方，开启你的深度助教模式，请对引用的原文段落进行具体的、有启发性的拆解。`;
+            `请对上面的原文段落进行批注。每条批注 20~50 字，用 > 引用块格式输出。不要复述或总结原文。`;
 
         await injectMemoryPalace(selectedChar, undefined, chapter.title);
         let baseContext = ContextBuilder.buildCoreContext(selectedChar, userProfile, true);
 
         baseContext += `
-### [System: Study Mode Active]
-你现在是一位陪读导师。
+### [系统指令]
+你是一位陪读导师。用户正在阅读原文，你只需要在原文下方提供批注。
 
-### [最高指令]
-${userInstruction}
-
-### [原文]
+### [原文（仅供你阅读参考，不需要你输出）]
 ${chunkText.substring(0, 4000)}
 
-### [执行要求]
-请严格按照上述"最高指令"执行。`;
+### [任务]
+${userInstruction}
+
+### [输出要求]
+- 只输出批注，不要输出原文。
+- 每条批注用 \`> \` 开头。
+- 保持你的人设性格。
+`;
 
         const response = await fetch(`${effectiveApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
             method: 'POST',
@@ -769,7 +798,7 @@ ${chunkText.substring(0, 4000)}
                 model: effectiveApi.model,
                 messages: [{ role: "user", content: baseContext }],
                 temperature: 0.7,
-                max_tokens: 4000,
+                max_tokens: 8000,
                 safetySettings: [
                     { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
                     { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
@@ -788,22 +817,18 @@ ${chunkText.substring(0, 4000)}
         }
 
         const data = await safeResponseJson(response);
-        let text = data.choices?.[0]?.message?.content || data.choices?.[0]?.message?.reasoning_content || "（内容为空）";
+        let annotationText = data.choices?.[0]?.message?.content || data.choices?.[0]?.message?.reasoning_content || "（批注为空）";
         
-        if (!text) {
-            setCurrentText("模型返回内容为空，请重试。");
-            setClassroomState('idle');
-            return;
-        }
+        const displayText = `${chunkText.substring(0, 4000)}\n\n---\n\n## 📝 批注\n\n${annotationText}`;
 
         const updatedChapters = [...course.chapters];
-        updatedChapters[chapterIdx] = { ...chapter, content: text };
+        updatedChapters[chapterIdx] = { ...chapter, content: displayText };
         const updatedCourse = { ...course, chapters: updatedChapters };
         await DB.saveCourse(updatedCourse);
         setActiveCourse(updatedCourse);
         setCourses(prev => prev.map(c => c.id === updatedCourse.id ? updatedCourse : c));
 
-        setCurrentText(text);
+        setCurrentText(displayText);
         setClassroomState('idle');
     };
 
@@ -821,9 +846,8 @@ ${chunkText.substring(0, 4000)}
 
         skipTypingRef.current = false;
         setClassroomState('teaching');
-        setCurrentText("正在准备教案...");
+        setCurrentText("正在准备...");
         
-        // 使用分段逻辑
         const segIdx = chapter.currentSegmentIndex || 0;
         const segments = chapter.segmentsMeta || [];
         const paragraphs = chapter.paragraphs || [];
@@ -848,7 +872,7 @@ ${chunkText.substring(0, 4000)}
         }
 
         const seg = segments[segIdx];
-        const numberedText = buildNumberedText(paragraphs, seg.start, seg.end);
+        const numberedText = buildNumberedTextForAI(paragraphs, seg.start, seg.end);
         await doTeachWithNumberedText(course, chapterIdx, numberedText, forceRegenerate, segIdx);
     };
 
@@ -857,7 +881,6 @@ ${chunkText.substring(0, 4000)}
         handleTeach(activeCourse, activeCourse.currentChapterIndex, true);
     };
 
-    // 翻页功能
     const handleChangeSegment = async (delta: number) => {
         if (!activeCourse) return;
         const chapter = activeCourse.chapters[activeCourse.currentChapterIndex];
@@ -866,14 +889,15 @@ ${chunkText.substring(0, 4000)}
         if (newIdx < 0 || newIdx >= total) return;
         
         const updatedChapters = [...activeCourse.chapters];
-        updatedChapters[activeCourse.currentChapterIndex] = { ...chapter, currentSegmentIndex: newIdx };
+        updatedChapters[activeCourse.currentChapterIndex] = { ...chapter, currentSegmentIndex: newIdx, content: '' };
         const updatedCourse = { ...activeCourse, chapters: updatedChapters };
         await DB.saveCourse(updatedCourse);
         setActiveCourse(updatedCourse);
         setCourses(prev => prev.map(c => c.id === updatedCourse.id ? updatedCourse : c));
         handleTeach(updatedCourse, activeCourse.currentChapterIndex, true);
     };
-        // ============================================================
+
+    // ============================================================
     // 提问（保存问答历史）
     // ============================================================
     const handleAskQuestion = async () => {
@@ -895,7 +919,7 @@ ${chunkText.substring(0, 4000)}
 
             if (segments.length > 0 && paragraphs.length > 0 && segIdx < segments.length) {
                 const seg = segments[segIdx];
-                contextText = buildNumberedText(paragraphs, seg.start, seg.end);
+                contextText = buildNumberedTextForAI(paragraphs, seg.start, seg.end);
             } else {
                 const totalLen = activeCourse.rawText.length;
                 const chunkSize = Math.floor(totalLen / activeCourse.chapters.length);
@@ -1015,7 +1039,7 @@ Note: Use "我" (I) to refer to yourself.
         if (!activeCourse) return;
         const updatedCourse = { ...activeCourse, currentChapterIndex: idx };
         const updatedChapters = [...updatedCourse.chapters];
-        updatedChapters[idx] = { ...updatedChapters[idx], currentSegmentIndex: 0 };
+        updatedChapters[idx] = { ...updatedChapters[idx], currentSegmentIndex: 0, content: '' };
         updatedCourse.chapters = updatedChapters;
         setActiveCourse(updatedCourse);
         DB.saveCourse(updatedCourse);
@@ -1038,7 +1062,7 @@ Note: Use "我" (I) to refer to yourself.
     };
 
     // ============================================================
-    // 测验逻辑（保持不变）
+    // 测验逻辑
     // ============================================================
     const loadQuizzes = async () => {
         const list = await DB.getAllQuizzes();
@@ -1470,7 +1494,7 @@ Answer in character. Be helpful and clear.`;
                             <textarea
                                 value={importPreference}
                                 onChange={e => setImportPreference(e.target.value)}
-                                placeholder="例如：请用中文讲解，多用简单的比喻，针对数学公式详细推导..."
+                                placeholder="例如：请用王阳明口吻批注，结合心学进行解读..."
                                 className="w-full h-32 bg-slate-100 rounded-xl p-3 text-sm focus:outline-blue-500 resize-none"
                             />
                         </div>
@@ -1518,8 +1542,8 @@ Answer in character. Be helpful and clear.`;
                                 </div>
                             )}
                             <div className="space-y-2 bg-slate-100 rounded-xl p-3">
-                                <input value={presetName} onChange={e => setPresetName(e.target.value)} placeholder="预设名称（如：数学辅导）" className="w-full bg-white rounded-lg p-2.5 text-sm focus:outline-blue-500" />
-                                <textarea value={presetPrompt} onChange={e => setPresetPrompt(e.target.value)} placeholder="提示词内容（如：请用中文讲解，多用简单的比喻...）" className="w-full bg-white rounded-lg p-2.5 text-sm focus:outline-blue-500 resize-none h-24" />
+                                <input value={presetName} onChange={e => setPresetName(e.target.value)} placeholder="预设名称（如：王阳明陪读）" className="w-full bg-white rounded-lg p-2.5 text-sm focus:outline-blue-500" />
+                                <textarea value={presetPrompt} onChange={e => setPresetPrompt(e.target.value)} placeholder="提示词内容（如：请用王阳明口吻进行批注...）" className="w-full bg-white rounded-lg p-2.5 text-sm focus:outline-blue-500 resize-none h-24" />
                                 <button onClick={handleSavePreset} disabled={!presetName.trim() || !presetPrompt.trim()} className="w-full py-2.5 bg-blue-500 text-white font-bold rounded-xl text-xs disabled:opacity-40">
                                     {editingPreset ? '更新预设' : '添加预设'}
                                 </button>
@@ -1613,13 +1637,12 @@ Answer in character. Be helpful and clear.`;
                         <div className="flex-1 overflow-y-auto no-scrollbar space-y-2">
                             {activeCourse?.chapters.map((ch, idx) => {
                                 const totalSegs = ch.segmentsMeta?.length || 0;
-                                const doneSegs = ch.segmentsMeta?.filter(s => s.status === 'done').length || 0;
                                 return (
                                     <button key={ch.id} onClick={() => jumpToChapter(idx)} className={`w-full text-left p-3 rounded-xl text-xs transition-all ${idx === activeCourse.currentChapterIndex ? 'bg-blue-600 text-white font-bold' : 'text-slate-600 hover:bg-slate-100'}`}>
                                         <div className="flex items-center gap-2">
                                             {ch.isCompleted ? <Check size={14} weight="bold" className="text-blue-400" /> : <span className="w-2 h-2 rounded-full bg-slate-300"></span>}
                                             <span className="flex-1 truncate">{ch.title}</span>
-                                            {totalSegs > 0 && <span className="text-[10px] opacity-60">{doneSegs}/{totalSegs}</span>}
+                                            {totalSegs > 0 && <span className="text-[10px] opacity-60">{ch.currentSegmentIndex !== undefined ? ch.currentSegmentIndex + 1 : 1}/{totalSegs}</span>}
                                         </div>
                                     </button>
                                 );
@@ -1644,7 +1667,7 @@ Answer in character. Be helpful and clear.`;
             <div className="absolute bottom-0 w-full bg-white/95 backdrop-blur-xl border-t border-slate-200 p-4 z-30 pb-safe">
                 <div className="flex gap-3">
                     {classroomState === 'teaching' || isTyping ? (
-                        <div className="w-full h-12 flex items-center justify-center text-slate-400 text-sm animate-pulse font-mono tracking-widest">LECTURING...</div>
+                        <div className="w-full h-12 flex items-center justify-center text-slate-400 text-sm animate-pulse font-mono tracking-widest">生成批注中...</div>
                     ) : classroomState === 'finished' ? (
                         <button onClick={() => setMode('bookshelf')} className="flex-1 h-12 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-bold shadow-lg shadow-blue-200 active:scale-95 transition-all">完成课程</button>
                     ) : classroomState === 'q_and_a' ? (
@@ -1654,17 +1677,14 @@ Answer in character. Be helpful and clear.`;
                         </div>
                     ) : (
                         <>
-                            {/* 上一段 */}
                             <button onClick={() => handleChangeSegment(-1)} disabled={activeCourse?.chapters[activeCourse.currentChapterIndex]?.currentSegmentIndex === 0} className="w-10 h-10 bg-slate-100 hover:bg-slate-200 text-slate-500 rounded-xl border border-slate-200 active:scale-95 transition-all disabled:opacity-30 flex items-center justify-center">
                                 ◀
                             </button>
-                            {/* 段进度 */}
                             <span className="text-xs text-slate-400 flex items-center">
                                 {activeCourse?.chapters[activeCourse.currentChapterIndex]?.segmentsMeta && 
                                     `${(activeCourse.chapters[activeCourse.currentChapterIndex].currentSegmentIndex || 0) + 1}/${activeCourse.chapters[activeCourse.currentChapterIndex].segmentsMeta!.length}`
                                 }
                             </span>
-                            {/* 下一段 */}
                             <button onClick={() => handleChangeSegment(1)} disabled={activeCourse?.chapters[activeCourse.currentChapterIndex]?.currentSegmentIndex === (activeCourse?.chapters[activeCourse.currentChapterIndex]?.segmentsMeta?.length || 0) - 1} className="w-10 h-10 bg-slate-100 hover:bg-slate-200 text-slate-500 rounded-xl border border-slate-200 active:scale-95 transition-all disabled:opacity-30 flex items-center justify-center">
                                 ▶
                             </button>
