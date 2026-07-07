@@ -905,6 +905,13 @@ const MessageItem = React.memo(({
     const avatarRadiusClass = avatarShape === 'square' ? 'rounded-sm' : avatarShape === 'rounded' ? 'rounded-xl' : 'rounded-full';
     const avatarSizePx = avatarSize === 'small' ? 28 : avatarSize === 'large' ? 48 : 36;
     const shouldShowAvatar = avatarMode === 'every_message' || isLastInGroup;
+    // 头像绝对定位在气泡底部尖角处。只有 isLastInGroup 才会在气泡下方渲染时间戳，
+    // 时间戳预留了约 1.25rem 的竖向空间——头像的 bottom 偏移正是为对齐那种情况。
+    // 但 every_message 模式下每条都有头像，非组末条没有时间戳，气泡底就落在行底，
+    // 此时仍用 1.25rem 会让头像浮在气泡尖角上方（就是用户反馈的没对齐）。
+    // 所以：有时间戳 → 抬高 1.25rem 对齐气泡底；没时间戳 → 贴到行底与气泡尖角平齐。
+    const hasTimestampBelow = isLastInGroup && showTimestamp !== 'never';
+    const avatarBottomClass = hasTimestampBelow ? 'bottom-[1.25rem]' : 'bottom-0';
     const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const startPos = useRef({ x: 0, y: 0 });
     const activePointerId = useRef<number | null>(null);
@@ -1314,7 +1321,7 @@ const MessageItem = React.memo(({
 
                 {/* Avatar - Absolute Positioned */}
                 {!isUser && (
-                    <div className={`absolute bottom-[1.25rem] z-0 ${selectionMode ? 'left-14' : 'left-3'} transition-all duration-300`}>
+                    <div className={`absolute ${avatarBottomClass} z-0 ${selectionMode ? 'left-14' : 'left-3'} transition-all duration-300`}>
                         {renderAvatar(charAvatar)}
                     </div>
                 )}
@@ -1395,7 +1402,7 @@ const MessageItem = React.memo(({
 
                 {/* User Avatar - Absolute Positioned */}
                 {isUser && (
-                    <div className="absolute right-3 bottom-[1.25rem] z-0">
+                    <div className={`absolute right-3 ${avatarBottomClass} z-0 transition-all duration-300`}>
                         {renderAvatar(userAvatar)}
                     </div>
                 )}
@@ -2753,6 +2760,12 @@ const MessageItem = React.memo(({
     // Voice-only messages (no display text, only voice bar): skip bubble styling
     const isVoiceOnlyMsg = !displayContent && hasVoiceContent && !isUser && m.type === 'text';
 
+    // 外语语音消息：语音条展开区（转文字）本身就完整呈现「口播原文 + 中文翻译」两行，
+    // 顶部气泡再渲染一遍 displayContent 就成了重复——翻译模式下顶部是中文、语音条翻译行
+    // 也是中文，用户看到两份一样的翻译。这类消息把双语文字统一收进语音条，
+    // 顶部不再重复渲染正文，也不再显示（此时已无意义的）译/原文切换按钮。
+    const isForeignVoiceMsg = !isUser && m.type === 'text' && !!voiceData?.url && !!voiceData?.lang && !!cleanVoiceText(voiceData?.spokenText);
+
     return commonLayout(
         <div className={isVoiceOnlyMsg
             ? 'relative animate-fade-in'
@@ -2794,14 +2807,15 @@ const MessageItem = React.memo(({
             )}
 
             {/* Layer 4: Text Content — shown when there's visible text after stripping voice tags */}
-            {displayContent && (
+            {/* 外语语音消息把双语文字交给下方语音条渲染，顶部不再重复正文 */}
+            {displayContent && !isForeignVoiceMsg && (
             <div className="relative z-10 text-[15px] leading-relaxed whitespace-pre-wrap break-all select-text" style={{ color: styleConfig.textColor }}>
                 {renderContent(displayContent)}
             </div>
             )}
 
             {/* Layer 5: Per-bubble Translate Toggle (AI bilingual messages only) */}
-            {showTranslateButton && displayContent && (
+            {showTranslateButton && displayContent && !isForeignVoiceMsg && (
                 <div className="relative z-10 mt-2 flex justify-end">
                     <button
                         onClick={(e) => { e.stopPropagation(); e.preventDefault(); onTranslateToggle?.(m.id); }}
@@ -2834,8 +2848,9 @@ const MessageItem = React.memo(({
                 const vbBtn = styleConfig.voiceBarBtnColor;
                 const vbWave = styleConfig.voiceBarWaveColor;
                 const vbText = styleConfig.voiceBarTextColor;
-                // Voice-only mode: no visible text, voice bar is primary content
-                const isVoiceOnly = !!voiceData?.url && !displayContent;
+                // Voice-only mode: no visible text, voice bar is primary content.
+                // 外语语音消息顶部正文已隐藏（交给语音条渲染），同样按纯语音处理，去掉多余上间距。
+                const isVoiceOnly = !!voiceData?.url && (!displayContent || isForeignVoiceMsg);
                 return (
                 <div className={`relative z-10 ${isVoiceOnly ? '' : 'mt-2.5'}`}>
                     {voiceData?.url ? (
